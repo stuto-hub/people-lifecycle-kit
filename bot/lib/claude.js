@@ -28,7 +28,19 @@ export function knowledgeBlock(kb, r, today = todayIso()) {
   return 'KNOWLEDGE\nGuides:\n' + guides + '\nKnown questions:\n' + qa + '\n\n' + hint;
 }
 
-export async function askClaude(question, kb, r) {
+/** Earlier turns + the new question, merged so roles alternate and the first one is the user's. */
+export function toMessages(past, question) {
+  const msgs = [];
+  for (const m of [...past, { role: 'user', content: question }]) {
+    if (!m.content) continue;
+    if (msgs.length && msgs[msgs.length - 1].role === m.role) msgs[msgs.length - 1].content += '\n' + m.content;
+    else msgs.push({ role: m.role, content: m.content });
+  }
+  while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+  return msgs;
+}
+
+export async function askClaude(question, kb, r, past = []) {
   const key = env('ANTHROPIC_API_KEY');
   if (!key) return r.text;                       // no Claude key yet: rule-based answer
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -37,7 +49,7 @@ export async function askClaude(question, kb, r) {
     body: JSON.stringify({
       model: CONFIG.CLAUDE_MODEL, max_tokens: 500,
       system: SYSTEM_PROMPT + '\n\n' + knowledgeBlock(kb, r),
-      messages: [{ role: 'user', content: question }]
+      messages: toMessages(past, question)
     })
   });
   const j = await res.json().catch(() => ({}));

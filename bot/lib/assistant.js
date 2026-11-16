@@ -8,7 +8,7 @@
 import Core from './core.js';
 import { CONFIG, todayIso } from './config.js';
 import { notion, queryAll, T } from './notion.js';
-import { send, postMessage, respond } from './slack.js';
+import { send, postMessage, respond, slackApi, slackGet } from './slack.js';
 import { askClaude } from './claude.js';
 
 // ---------------- knowledge from Notion (cached 10 minutes per warm instance) ----------------
@@ -67,21 +67,39 @@ export function acceptEvent(body) {
   return ev;
 }
 
+/**
+ * Earlier messages in the same conversation, so follow-ups make sense ("and in Spain?").
+ * Threads: the thread. DMs without a thread: messages from the last hour. Read live from Slack, nothing stored.
+ */
+export async function history(ev) {
+  try {
+    const j = ev.thread_ts ? await slackGet('conversations.replies', { channel: ev.channel, ts: ev.thread_ts, limit: '15' })
+      : ev.channel_type === 'im' ? await slackGet('conversations.history', { channel: ev.channel, latest: ev.ts, limit: '8' })
+      : null;
+    if (!j || !j.ok) return [];
+    let msgs = (j.messages || []).filter(m => m.ts !== ev.ts && m.text && !m.text.startsWith('🧠'));
+    if (!ev.thread_ts) msgs = msgs.filter(m => Number(m.ts) > Number(ev.ts) - 3600).reverse();   // history is newest first
+    return msgs.slice(-8).map(m => ({ role: m.bot_id ? 'assistant' : 'user', content: m.text.replace(/<@[A-Z0-9]+>/g, '').trim() }));
+  } catch { return []; }
+}
+
 export async function answerChat(ev) {
   const question = ev.text.replace(/<@[A-Z0-9]+>/g, '').trim();
   const thread_ts = ev.type === 'app_mention' ? (ev.thread_ts || ev.ts) : ev.thread_ts;
   const via = ev.type === 'app_mention' ? 'an @mention' : 'a DM to the bot';
+  const thinking = await postMessage({ channel: ev.channel, text: '🧠 Thinking…', thread_ts });
   let answer;
   try {
-    const kb = await knowledge();
+    const [kb, past] = await Promise.all([knowledge(), history(ev)]);
     const r = match(question, kb);
-    answer = await askClaude(question, kb, r);
+    answer = await askClaude(question, kb, r, past);
     await routeActions(r, ev.user, question, via);
   } catch (err) {
     console.error(err);
     answer = 'Sorry, I hit a problem answering that. People Ops has been told. You can also check the People Ops Hub: ' + CONFIG.HUB_URL;
     await send({ to: CONFIG.CHANNEL, kind: 'error', text: '❌ Chat answer failed for <@' + ev.user + '>: ' + err.message });
   }
+  if (thinking && thinking.ok) return slackApi('chat.update', { channel: ev.channel, ts: thinking.ts, text: answer });
   return postMessage({ channel: ev.channel, text: answer, thread_ts });
 }
 

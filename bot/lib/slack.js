@@ -11,6 +11,13 @@ export async function slackApi(method, body) {
   return res.json();
 }
 
+/** Read methods (conversations.history / replies) take query parameters. */
+export async function slackGet(method, params) {
+  const res = await fetch('https://slack.com/api/' + method + '?' + new URLSearchParams(params), {
+    headers: { Authorization: 'Bearer ' + env('SLACK_BOT_TOKEN') } });
+  return res.json();
+}
+
 export const postMessage = body => slackApi('chat.postMessage', { unfurl_links: false, ...body });
 
 /** Reply through a response_url (slash commands and button clicks). */
