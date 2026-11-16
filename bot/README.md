@@ -5,7 +5,7 @@ Onboarding and offboarding on free tools. Notion holds the people, steps and gui
 | Piece | Where it runs | What it does |
 |---|---|---|
 | `scripts/daily.js` | GitHub Actions, 09:00 IST daily (`.github/workflows/daily.yml`) | New person in Notion → one task per step · day 0 moved → date-based steps reopen · due/overdue nudges with a **Mark done** button · escalation on day 1 (People Ops lead) and day 2 (the person's lead) · digest + ✅ heartbeat |
-| `api/slack.js` | Vercel (free Hobby plan) | DMs and @mentions → Claude answers only from the Notion guides · `/people` → instant private answer · **Mark done** → Notion updated |
+| `api/slack.js` | Vercel (free Hobby plan) | DMs and @mentions → "🧠 Thinking…" then a Claude answer from the Notion guides only, with the earlier conversation as context · `/people` → instant private answer · **Mark done** → Notion updated |
 | `test/` | GitHub Actions on every push | The test plan as code: fake joiner + 3 edge cases + extras, with Notion, Slack and Claude faked |
 
 No dependencies except `@vercel/functions` (keeps the function alive after replying to Slack within 3 seconds).
