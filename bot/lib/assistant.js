@@ -84,7 +84,8 @@ export async function answerChat(ev) {
     const [kb, past] = await Promise.all([knowledge(), history(ev)]);
     const r = match(question, kb);
     answer = await askClaude(question, kb, r, past);
-    await routeActions(r, ev.user, question, via);
+    // A follow-up ('and in Spain?') rarely matches on its own; with earlier context Claude answers it, so it is not a guide gap.
+    await routeActions(past.length && r.matched === 'GAP' ? { ...r, matched: 'FOLLOW_UP', action: '' } : r, ev.user, question, via);
   } catch (err) {
     console.error(err);
     answer = 'Sorry, I hit a problem answering that. People Ops has been told. You can also check the People Ops Hub: ' + CONFIG.HUB_URL;
