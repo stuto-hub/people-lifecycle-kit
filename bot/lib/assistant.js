@@ -1,0 +1,103 @@
+/**
+ * Everything Slack sends to the bot:
+ *   - DMs and @mentions -> Claude answers from the guides in Notion
+ *   - /people           -> fast rule-based answer, private to the asker
+ *   - "Mark done" button -> task set to Done in Notion
+ * Anything that changes a record (a leaver request) only creates a pending row: People Ops confirms.
+ */
+import Core from './core.js';
+import { CONFIG, todayIso } from './config.js';
+import { notion, queryAll, T } from './notion.js';
+import { send, postMessage, respond } from './slack.js';
+import { askClaude } from './claude.js';
+
+// ---------------- knowledge from Notion (cached 10 minutes per warm instance) ----------------
+const ACT = {
+  'Answer + show personal checklist': 'my_checklist',
+  'Answer + start leaver request (People Ops confirms)': 'notify_leaver',
+  'Route to Finance (no guide yet)': 'route_finance',
+  'Route to People Ops + log gap': 'route_people_ops'
+};
+let kbCache = { at: 0, kb: null };
+export function clearKnowledgeCache() { kbCache = { at: 0, kb: null }; }
+
+export async function knowledge() {
+  if (kbCache.kb && Date.now() - kbCache.at < 600000) return kbCache.kb;
+  const [g, q] = await Promise.all([queryAll(CONFIG.DB.guides), queryAll(CONFIG.DB.questions)]);
+  const guides = g.map(x => ({ guide_id: x.Guide, title: x.Guide, owner_role: x.Owner, last_updated: x['Last reviewed'], link: x.Link || x._url }));
+  const titleById = Object.fromEntries(g.map(x => [x._id, x.Guide]));
+  const guideOf = v => Array.isArray(v) ? (titleById[v[0]] || '') : (v || '');   // works whether Guide is text or a relation
+  const intents = q.map((x, i) => ({ intent_id: 'Q' + (i + 1), keywords: String(x.Keywords || '').split(',').map(k => k.trim()).join('|'),
+    guide_id: guideOf(x.Guide), answer: x.Answer, action: ACT[x.Action] || '', sensitive: x.Confidential ? 'Y' : 'N' }));
+  kbCache = { at: Date.now(), kb: { guides, intents } };
+  return kbCache.kb;
+}
+
+const match = (text, kb) => Core.matchQuestion(text, kb.intents, kb.guides, todayIso(), CONFIG.STALE_DAYS);
+
+// ---------------- side effects shared by /people and chat ----------------
+export async function routeActions(r, user, text, via) {
+  if (r.action === 'notify_leaver') {
+    await notion('post', '/pages', { parent: { database_id: CONFIG.DB.people }, properties: {
+      'Name': { title: T('Leaver request from Slack user ' + user) }, 'Flow': { select: { name: 'Leaver' } },
+      'Status': { select: { name: 'Pending confirmation' } },
+      'Notes': { rich_text: T('Asked via ' + via + ': "' + text + '". People Ops confirms dates, then sets Status to Active.') } } });
+    await send({ to: CONFIG.CHANNEL, kind: 'request', text: '📨 <@' + user + '> asked about their last day via ' + via +
+      '. A pending leaver row was added in Notion. Reach out privately and confirm dates before setting it to Active.' });
+  }
+  if (r.action === 'route_finance')
+    await send({ to: CONFIG.ROLES.Finance, kind: 'question', text: '❓ Question from <@' + user + '> via ' + via + ': "' + text + '" (no guide yet).' });
+  if (r.action === 'route_people_ops' || r.matched === 'GAP')
+    await send({ to: CONFIG.CHANNEL, kind: 'question', text: '❓ Unanswered question from <@' + user + '> via ' + via + ': "' + text + '" (logged as a guide gap).' });
+}
+
+// ---------------- DMs and @mentions: Claude ----------------
+const seen = new Map();   // event_id -> time, so a Slack retry is never answered twice
+
+/** Returns null when the event should be ignored, otherwise the work to do. */
+export function acceptEvent(body) {
+  if (body.type !== 'event_callback') return null;
+  const ev = body.event || {};
+  if (ev.bot_id || ev.subtype || !ev.text) return null;                 // ignore bots (incl. itself) and edits
+  if (!(ev.type === 'app_mention' || (ev.type === 'message' && ev.channel_type === 'im'))) return null;
+  const now = Date.now();
+  for (const [k, t] of seen) if (now - t > 3600000) seen.delete(k);
+  if (seen.has(body.event_id)) return null;
+  seen.set(body.event_id, now);
+  return ev;
+}
+
+export async function answerChat(ev) {
+  const question = ev.text.replace(/<@[A-Z0-9]+>/g, '').trim();
+  const thread_ts = ev.type === 'app_mention' ? (ev.thread_ts || ev.ts) : ev.thread_ts;
+  const via = ev.type === 'app_mention' ? 'an @mention' : 'a DM to the bot';
+  let answer;
+  try {
+    const kb = await knowledge();
+    const r = match(question, kb);
+    answer = await askClaude(question, kb, r);
+    await routeActions(r, ev.user, question, via);
+  } catch (err) {
+    console.error(err);
+    answer = 'Sorry, I hit a problem answering that. People Ops has been told. You can also check the People Ops Hub: ' + CONFIG.HUB_URL;
+    await send({ to: CONFIG.CHANNEL, kind: 'error', text: '❌ Chat answer failed for <@' + ev.user + '>: ' + err.message });
+  }
+  return postMessage({ channel: ev.channel, text: answer, thread_ts });
+}
+
+// ---------------- /people: fast and rule-based (Slack allows 3 seconds) ----------------
+export async function peopleCommand(form) {
+  const text = form.get('text') || '';
+  const kb = await knowledge();
+  const r = match(text, kb);
+  return { reply: { response_type: 'ephemeral', text: r.text + '\n_Tip: DM me for a fuller answer._' },
+           after: () => routeActions(r, form.get('user_id'), text, '/people') };
+}
+
+// ---------------- "Mark done" button ----------------
+export async function buttonClick(payload) {
+  const a = (payload.actions || [])[0];
+  if (!a || a.action_id !== 'mark_done') return;
+  await notion('patch', '/pages/' + a.value, { properties: { 'Status': { select: { name: 'Done' } } } });
+  await respond(payload.response_url, { replace_original: true, text: '✅ Marked done in Notion by <@' + payload.user.id + '>' });
+}
