@@ -1,4 +1,4 @@
-/** Chat answers from Claude, grounded only in the guides and Q&A kept in Notion. */
+/** Chat answers from Claude, grounded only in the guides and Q&A kept in bot/data. */
 import Core from './core.js';
 import { CONFIG, env, todayIso } from './config.js';
 
@@ -15,7 +15,7 @@ export const SYSTEM_PROMPT = [
   '- Style: friendly, plain English, Slack formatting (*bold*, bullets), at most 6 short lines.'
 ].join('\n');
 
-/** Turns the Notion knowledge into the context block Claude answers from. */
+/** Turns the guides and Q&A into the context block Claude answers from. */
 export function knowledgeBlock(kb, r, today = todayIso()) {
   const guides = kb.guides.map(g => {
     const age = g.last_updated ? Core.diffDays(today, g.last_updated) : null;

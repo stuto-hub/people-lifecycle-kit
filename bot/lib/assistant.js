@@ -1,50 +1,41 @@
 /**
  * Everything Slack sends to the bot:
- *   - DMs and @mentions -> Claude answers from the guides in Notion
+ *   - DMs and @mentions -> Claude answers from the guides in bot/data
  *   - /people           -> fast rule-based answer, private to the asker
- *   - "Mark done" button -> task set to Done in Notion
- * Anything that changes a record (a leaver request) only creates a pending row: People Ops confirms.
+ *   - "Mark done" button -> saved to data/status.json (if GITHUB_TOKEN is set) and the message is updated
+ * Anything that changes a record (a leaver request) only alerts People Ops: a human confirms and updates the data.
  */
 import Core from './core.js';
 import { CONFIG, todayIso } from './config.js';
-import { notion, queryAll, T } from './notion.js';
+import { load } from './store.js';
+import { saveStatus } from './github.js';
 import { send, postMessage, respond, slackApi, slackGet } from './slack.js';
 import { askClaude } from './claude.js';
 
-// ---------------- knowledge from Notion (cached 10 minutes per warm instance) ----------------
+// ---------------- knowledge from the data files ----------------
 const ACT = {
   'Answer + show personal checklist': 'my_checklist',
   'Answer + start leaver request (People Ops confirms)': 'notify_leaver',
   'Route to Finance (no guide yet)': 'route_finance',
   'Route to People Ops + log gap': 'route_people_ops'
 };
-let kbCache = { at: 0, kb: null };
-export function clearKnowledgeCache() { kbCache = { at: 0, kb: null }; }
+export function clearKnowledgeCache() {}
 
 export async function knowledge() {
-  if (kbCache.kb && Date.now() - kbCache.at < 600000) return kbCache.kb;
-  const [g, q] = await Promise.all([queryAll(CONFIG.DB.guides), queryAll(CONFIG.DB.questions)]);
-  const guides = g.map(x => ({ guide_id: x.Guide, title: x.Guide, owner_role: x.Owner, last_updated: x['Last reviewed'], link: x.Link || x._url }));
-  const titleById = Object.fromEntries(g.map(x => [x._id, x.Guide]));
-  const guideOf = v => Array.isArray(v) ? (titleById[v[0]] || '') : (v || '');   // works whether Guide is text or a relation
-  const intents = q.map((x, i) => ({ intent_id: 'Q' + (i + 1), keywords: String(x.Keywords || '').split(',').map(k => k.trim()).join('|'),
-    guide_id: guideOf(x.Guide), answer: x.Answer, action: ACT[x.Action] || '', sensitive: x.Confidential ? 'Y' : 'N' }));
-  kbCache = { at: Date.now(), kb: { guides, intents } };
-  return kbCache.kb;
+  const d = load();
+  const guides = d.guides.map(x => ({ guide_id: x.Guide, title: x.Guide, owner_role: x.Owner, last_updated: x['Last reviewed'], link: x.Link }));
+  const intents = d.questions.map((x, i) => ({ intent_id: 'Q' + (i + 1), keywords: String(x.Keywords || '').split(',').map(k => k.trim()).join('|'),
+    guide_id: x.Guide || '', answer: x.Answer, action: ACT[x.Action] || '', sensitive: x.Confidential ? 'Y' : 'N' }));
+  return { guides, intents };
 }
 
 const match = (text, kb) => Core.matchQuestion(text, kb.intents, kb.guides, todayIso(), CONFIG.STALE_DAYS);
 
 // ---------------- side effects shared by /people and chat ----------------
 export async function routeActions(r, user, text, via) {
-  if (r.action === 'notify_leaver') {
-    await notion('post', '/pages', { parent: { database_id: CONFIG.DB.people }, properties: {
-      'Name': { title: T('Leaver request from Slack user ' + user) }, 'Flow': { select: { name: 'Leaver' } },
-      'Status': { select: { name: 'Pending confirmation' } },
-      'Notes': { rich_text: T('Asked via ' + via + ': "' + text + '". People Ops confirms dates, then sets Status to Active.') } } });
+  if (r.action === 'notify_leaver')
     await send({ to: CONFIG.CHANNEL, kind: 'request', text: '📨 <@' + user + '> asked about their last day via ' + via +
-      '. A pending leaver row was added in Notion. Reach out privately and confirm dates before setting it to Active.' });
-  }
+      '. Nothing has been changed. Reach out privately, confirm dates, then add them to people.json as a leaver.' });
   if (r.action === 'route_finance')
     await send({ to: CONFIG.ROLES.Finance, kind: 'question', text: '❓ Question from <@' + user + '> via ' + via + ': "' + text + '" (no guide yet).' });
   if (r.action === 'route_people_ops' || r.matched === 'GAP')
@@ -116,6 +107,8 @@ export async function peopleCommand(form) {
 export async function buttonClick(payload) {
   const a = (payload.actions || [])[0];
   if (!a || a.action_id !== 'mark_done') return;
-  await notion('patch', '/pages/' + a.value, { properties: { 'Status': { select: { name: 'Done' } } } });
-  await respond(payload.response_url, { replace_original: true, text: '✅ Marked done in Notion by <@' + payload.user.id + '>' });
+  const who = payload.user.id;
+  const saved = await saveStatus(a.value, { Status: 'Done', 'Done on': new Date().toISOString().slice(0, 10), 'Done by': who }, who);
+  await respond(payload.response_url, { replace_original: true,
+    text: '✅ Marked done by <@' + who + '>' + (saved ? ' (saved to status.json)' : ' (demo: not saved, add GITHUB_TOKEN to save)') });
 }

@@ -1,6 +1,6 @@
 /**
- * The daily lifecycle run: Notion is the system of record, Slack is where people get nudged.
- *   1. new joiner/leaver in Notion  -> one task per step in the Steps Library
+ * The daily lifecycle run: the data files are the system of record, Slack is where people get nudged.
+ *   1. new joiner/leaver added      -> flow started (tasks = one per step), red flags at once
  *   2. day 0 moved                  -> date-dependent steps reopened
  *   3. due today / overdue          -> nudge the owner, escalate on day 1 and day 2
  *   4. digest + heartbeat           -> #people-ops-alerts
@@ -8,7 +8,7 @@
  */
 import Core from './core.js';
 import { CONFIG, isSlackId, todayIso } from './config.js';
-import { notion, queryAll, T } from './notion.js';
+import { load, buildTasks, people as peopleOf } from './store.js';
 import { send } from './slack.js';
 
 const isLive = p => /active|test/i.test(p.Status || '');
@@ -23,45 +23,24 @@ export function owner(role, person) {
 const fill = (tpl, v) => String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => (v[k] === undefined || v[k] === '') ? '(not set)' : v[k]);
 const hasTemplate = p => CONFIG.TEMPLATES.includes(p.Country + '|' + p['Worker type']);
 
-// ---------------- 1. new people -> tasks (the trigger) ----------------
-export async function createMissingTasks(people, steps, today, out) {
-  for (const p of people.filter(p => isLive(p) && p['Day 0'] && !(p.Tasks || []).length)) {
-    const flow = p.Flow; let compressed = 0;
-    for (const s of steps.filter(s => s.Flow === flow)) {
-      let offset = Number(s['Offset (days)']); let note = '';
-      if (Core.diffDays(Core.addDays(p['Day 0'], offset), today) < 0) {   // short notice: never create a task that is already late
-        offset = Core.diffDays(today, p['Day 0']); note = 'Short notice: due date pulled to today'; compressed++;
-      }
-      await notion('post', '/pages', { parent: { database_id: CONFIG.DB.tasks }, properties: {
-        'Task': { title: T(p.Name + ' · ' + s.Step) }, 'Person': { relation: [{ id: p._id }] },
-        'Step': { rich_text: T(s.Step) }, 'Offset (days)': { number: offset },
-        'Status': { select: { name: 'Not started' } }, 'Owner role': { select: { name: s['Owner role'] } },
-        'Critical': { checkbox: !!s.Critical }, 'Human moment': { checkbox: !!s['Human moment'] },
-        'Confidential': { checkbox: !!s.Confidential }, 'Notes': { rich_text: T(note) } } });
-    }
-    await notion('patch', '/pages/' + p._id, { properties: { 'Day 0 (synced)': { date: { start: p['Day 0'] } } } });
-    out.push({ to: CONFIG.CHANNEL, kind: 'flow_started', text: '🟢 ' + flow + ' flow started for *' + p.Name + '* (' + p.Country + ', ' + p['Worker type'] +
+// ---------------- 1. new people -> flow started + red flags (on the day they are added) ----------------
+export function flowStarts(people, tasks, today, out) {
+  for (const p of people.filter(p => isLive(p) && p['Day 0'] && p['Added on'] === today)) {
+    const compressed = tasks.filter(t => t.Person[0] === p._id && /Short notice/.test(t.Notes)).length;
+    out.push({ to: CONFIG.CHANNEL, kind: 'flow_started', text: '🟢 ' + p.Flow + ' flow started for *' + p.Name + '* (' + p.Country + ', ' + p['Worker type'] +
       '), day 0 = ' + Core.pretty(p['Day 0']) + '.' + (compressed ? ' ⚠️ Short notice: ' + compressed + ' steps are due today.' : '') + ' <' + p._url + '|Open>' });
-    if (flow === 'Joiner' && !hasTemplate(p))
+    if (p.Flow === 'Joiner' && !hasTemplate(p))
       out.push({ to: CONFIG.CHANNEL, kind: 'flag', text: '🚩 No agreement template for *' + p['Worker type'] + ' in ' + p.Country + '*. A human checks local rules before the agreement goes out.' });
-    if (flow === 'Leaver' && !p['Shared logins'])
+    if (p.Flow === 'Leaver' && !p['Shared logins'])
       out.push({ to: CONFIG.CHANNEL, kind: 'flag', text: '🚩 *' + p.Name + '* is leaving and has no shared logins listed. Ask the lead to confirm before the access step.' });
   }
 }
 
 // ---------------- 2. day 0 moved -> reopen date-dependent steps ----------------
-export async function handleDateMoves(people, steps, today, out) {
-  const recheck = steps.filter(s => s['Recheck if day 0 moves']).map(s => s.Step);
-  for (const p of people.filter(p => p['Day 0'] && p['Day 0 (synced)'] && p['Day 0'] !== p['Day 0 (synced)'])) {
-    const tasks = await queryAll(CONFIG.DB.tasks, { property: 'Person', relation: { contains: p._id } });
-    const reopened = [];
-    for (const t of tasks.filter(t => t.Status === 'Done' && recheck.includes(t.Step))) {
-      await notion('patch', '/pages/' + t._id, { properties: { 'Status': { select: { name: 'Not started' } },
-        'Notes': { rich_text: T('Reopened: day 0 moved from ' + Core.pretty(p['Day 0 (synced)'])) } } });
-      reopened.push(t.Step);
-    }
-    await notion('patch', '/pages/' + p._id, { properties: { 'Day 0 (synced)': { date: { start: p['Day 0'] } } } });
-    out.push({ to: CONFIG.CHANNEL, kind: 'date_moved', text: '📅 Day 0 for *' + p.Name + '* moved ' + Core.pretty(p['Day 0 (synced)']) + ' → ' + Core.pretty(p['Day 0']) +
+export function dateMoves(people, tasks, today, out) {
+  for (const p of people.filter(p => isLive(p) && p['Day 0 changed on'] === today && p['Previous day 0'])) {
+    const reopened = tasks.filter(t => t.Person[0] === p._id && /^Reopened/.test(t.Notes)).map(t => t.Step);
+    out.push({ to: CONFIG.CHANNEL, kind: 'date_moved', text: '📅 Day 0 for *' + p.Name + '* moved ' + Core.pretty(p['Previous day 0']) + ' → ' + Core.pretty(p['Day 0']) +
       '. All due dates re-dated.' + (reopened.length ? ' Reopened to recheck: ' + reopened.join(', ') + '.' : '') });
   }
 }
@@ -96,7 +75,7 @@ export function planNudges(tasks, peopleById, stepsByName, today, out) {
 }
 
 // ---------------- 4. digest ----------------
-export async function digest(people, tasks, peopleById, today, out) {
+export function digest(people, tasks, peopleById, today, out, guides = []) {
   const soon = people.filter(p => p['Day 0'] && isLive(p) && Core.diffDays(p['Day 0'], today) >= 0 && Core.diffDays(p['Day 0'], today) <= 14)
     .map(p => '• ' + (p.Flow === 'Joiner' ? '➡️ joining ' : '⬅️ leaving ') + Core.pretty(p['Day 0']) + ': ' + p.Name);
   const action = tasks.filter(t => t['Needs action']).map(t => {
@@ -104,48 +83,37 @@ export async function digest(people, tasks, peopleById, today, out) {
     return '• ' + t.Health + ': ' + (t.Confidential ? 'confidential step' : t.Step) + ' for ' + p.Name + (t['Escalate to'] ? ' → ' + t['Escalate to'] : '');
   });
   let text = '*Lifecycle digest, ' + Core.pretty(today) + '*\n*Next 14 days*\n' + (soon.join('\n') || '• nobody') +
-    '\n*Needs action* (<' + CONFIG.NEEDS_ACTION_URL + '|open in Notion>)\n' + (action.join('\n') || '• nothing 🎉');
+    '\n*Needs action* (<' + CONFIG.NEEDS_ACTION_URL + '|status file>)\n' + (action.join('\n') || '• nothing 🎉');
   if (new Date(today + 'T00:00:00Z').getUTCDay() === 1) {        // Mondays: guides due for review
-    const stale = (await queryAll(CONFIG.DB.guides)).filter(g => !/Current/.test(g['Review status'])).map(g => '• ' + g.Guide + ' (' + g.Owner + '): ' + g['Review status']);
+    const stale = guides.map(g => ({ g, age: g['Last reviewed'] ? Core.diffDays(today, g['Last reviewed']) : null }))
+      .filter(x => x.age === null || x.age > CONFIG.STALE_DAYS)
+      .map(x => '• ' + x.g.Guide + ' (' + x.g.Owner + '): ' + (x.age === null ? 'never reviewed' : 'last reviewed ' + Core.pretty(x.g['Last reviewed'])));
     text += '\n*Guides to review*\n' + (stale.join('\n') || '• all current');
   }
   out.push({ to: CONFIG.CHANNEL, kind: 'digest', text });
 }
 
-// ---------------- entry points ----------------
+// ---------------- entry point ----------------
+/** Plans every message for the day from the data files, then sends them (or just prints them in preview). */
 export async function dailyRun({ today = todayIso(), dryRun = false } = {}) {
   const out = [];
   try {
-    const people = await queryAll(CONFIG.DB.people), steps = await queryAll(CONFIG.DB.steps);
-    if (!dryRun) {
-      await createMissingTasks(people, steps, today, out);
-      await handleDateMoves(people, steps, today, out);
-    }
-    const peopleById = {}; (await queryAll(CONFIG.DB.people)).forEach(p => { peopleById[p._id] = p; });
-    const stepsByName = {}; steps.forEach(s => { stepsByName[s.Step] = s; });
-    const tasks = await queryAll(CONFIG.DB.tasks, { property: 'Status', select: { does_not_equal: 'Done' } });
+    const d = load();
+    const people = peopleOf(d), tasks = buildTasks(d, today);
+    const peopleById = {}; people.forEach(p => { peopleById[p._id] = p; });
+    const stepsByName = {}; d.steps.forEach(s => { stepsByName[s.Step] = s; });
+    flowStarts(people, tasks, today, out);
+    dateMoves(people, tasks, today, out);
     planNudges(tasks, peopleById, stepsByName, today, out);
-    await digest(Object.values(peopleById), tasks, peopleById, today, out);
+    digest(people, tasks, peopleById, today, out, d.guides);
     const n = out.filter(m => /nudge|overdue/.test(m.kind)).length, e = out.filter(m => /escalation|blocked/.test(m.kind)).length;
     out.push({ to: CONFIG.CHANNEL, kind: 'heartbeat', text: '✅ Lifecycle bot ran ' + Core.pretty(today) + ': ' + n + ' nudges, ' + e + ' escalations.' });
-    if (dryRun) out.forEach(m => console.log('[dry run] ' + m.kind + ' -> ' + m.to + ': ' + m.text.replace(/\n/g, ' ⏎ ')));
+    if (dryRun) out.forEach(m => console.log('[preview] ' + m.kind + ' -> ' + m.to + ': ' + m.text.replace(/\n/g, ' ⏎ ')));
     else for (const m of out) await send(m);
     return out;
   } catch (err) {
     if (!dryRun) await send({ to: CONFIG.CHANNEL, kind: 'error', text: '❌ Lifecycle bot failed: ' + err.message +
-      '\nManual fallback: work from the 🚨 Needs action view in Notion: ' + CONFIG.NEEDS_ACTION_URL });
+      '\nManual fallback: work from the status file: ' + CONFIG.NEEDS_ACTION_URL });
     throw err;
   }
-}
-
-/** One-time: adds the "Day 0 (synced)" column used to spot a moved start or last day. Safe to run twice. */
-export async function setup() {
-  await notion('patch', '/databases/' + CONFIG.DB.people, { properties: { 'Day 0 (synced)': { date: {} } } });
-  const people = await queryAll(CONFIG.DB.people);
-  let n = 0;
-  for (const p of people.filter(p => p['Day 0'] && !p['Day 0 (synced)'] && (p.Tasks || []).length)) {
-    await notion('patch', '/pages/' + p._id, { properties: { 'Day 0 (synced)': { date: { start: p['Day 0'] } } } });
-    n++;
-  }
-  console.log('Setup done: "Day 0 (synced)" column ready, filled for ' + n + ' people.');
 }

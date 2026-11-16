@@ -38,14 +38,14 @@ export async function send(m) {
       { type: 'section', text: { type: 'mrkdwn', text: m.text } },
       { type: 'actions', elements: [
         { type: 'button', style: 'primary', action_id: 'mark_done', value: m.taskId, text: { type: 'plain_text', text: 'Mark done ✅' } },
-        { type: 'button', action_id: 'open', url: m.url, text: { type: 'plain_text', text: 'Open in Notion' } } ] }
+        { type: 'button', action_id: 'open', url: m.url, text: { type: 'plain_text', text: 'Open status file' } } ] }
     ];
   }
   const j = await postMessage(body);
   console.log((j.ok ? 'sent ' : 'FAILED ') + m.kind + ' -> ' + m.to + (j.ok ? '' : ' ' + j.error));
   if (!j.ok && m.to !== CONFIG.CHANNEL) {
     await send({ to: CONFIG.CHANNEL, kind: 'flag', text: '⚠️ Could not reach ' + m.to + ' (' + j.error + '). ' +
-      (m.confidential ? 'A confidential step needs attention; see Notion.' : 'Message was: ' + m.text) });
+      (m.confidential ? 'A confidential step needs attention; see the status file.' : 'Message was: ' + m.text) });
   }
   return j;
 }
