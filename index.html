@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People Lifecycle Handbook</title>
+<style>
+  :root {
+    --ink: #1d1f2b; --muted: #5d6275; --line: #e4e2dc; --bg: #fbfaf7; --card: #ffffff;
+    --accent: #3a46b8; --accent-soft: #eceefc; --warm: #b4541c; --warm-soft: #fbeee4;
+    --ok: #2f7a4f; --ok-soft: #e6f3eb; --bad: #b3261e; --bad-soft: #fbe9e7;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 56px 0 28px; }
+  .eyebrow { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+  h1 { font-size: clamp(32px, 5vw, 46px); line-height: 1.1; margin: 10px 0 12px; letter-spacing: -.02em; }
+  .lede { font-size: 18px; color: var(--muted); max-width: 680px; margin: 0; }
+  nav { position: sticky; top: 0; z-index: 5; background: rgba(251,250,247,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; gap: 22px; overflow-x: auto; padding-top: 12px; padding-bottom: 12px; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 14px; white-space: nowrap; font-weight: 500; }
+  nav a:hover { color: var(--accent); }
+  section { padding: 44px 0 8px; }
+  h2 { font-size: 26px; margin: 0 0 6px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 0 0 22px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
+  /* ask box */
+  .ask { display: flex; gap: 10px; }
+  .ask .cmd { font-family: ui-monospace, Menlo, monospace; color: var(--accent); font-weight: 600; align-self: center; }
+  .ask input { flex: 1; font: inherit; padding: 13px 15px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  .ask input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .ask button, .tabs button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 0 18px; background: var(--accent); color: #fff; cursor: pointer; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+  .chip { font-size: 13.5px; border: 1px solid var(--line); background: #fff; border-radius: 99px; padding: 6px 12px; cursor: pointer; color: var(--ink); }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .answer { margin-top: 18px; border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; padding: 14px 16px; display: none; }
+  .answer.gap { border-color: var(--warm); background: var(--warm-soft); }
+  .answer .meta { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .answer a, td a { color: var(--accent); }
+  /* tabs + timeline */
+  .tabs { display: inline-flex; background: #efede7; border-radius: 12px; padding: 4px; margin-bottom: 18px; }
+  .tabs button { background: transparent; color: var(--muted); padding: 9px 18px; }
+  .tabs button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .case { color: var(--muted); font-size: 15px; margin: -6px 0 18px; }
+  .tl { position: relative; margin: 0; padding: 0; list-style: none; }
+  .tl::before { content: ""; position: absolute; left: 62px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+  .tl li { display: grid; grid-template-columns: 50px 1fr; gap: 26px; padding: 0 0 16px; position: relative; }
+  .tl .day { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 14px; padding-top: 14px; }
+  .tl .dot { position: absolute; left: 56px; top: 18px; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 3px solid var(--accent); }
+  .tl li.human .dot { border-color: var(--warm); }
+  .tl li.crit .dot { border-color: var(--bad); }
+  .step { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 15px; }
+  .step b { display: block; }
+  .step .owner { font-size: 13.5px; color: var(--muted); }
+  .step .nudge { font-size: 14px; margin-top: 6px; color: #373a4a; background: #f6f5f1; border-radius: 8px; padding: 7px 10px; }
+  .badge { display: inline-block; font-size: 11.5px; font-weight: 600; border-radius: 99px; padding: 2px 9px; margin: 6px 6px 0 0; }
+  .b-human { background: var(--warm-soft); color: var(--warm); }
+  .b-crit { background: var(--bad-soft); color: var(--bad); }
+  .b-sens { background: #efe9f8; color: #6a3fb0; }
+  .b-recheck { background: var(--accent-soft); color: var(--accent); }
+  .b-ok { background: var(--ok-soft); color: var(--ok); }
+  /* grid cards */
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .grid .card h3 { margin: 0 0 6px; font-size: 16px; }
+  .grid .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .ladder { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: #fff; }
+  .ladder div { padding: 16px 18px; border-right: 1px solid var(--line); }
+  .ladder div:last-child { border-right: 0; }
+  .ladder .when { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  .ladder .what { font-weight: 600; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; font-size: 14.5px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: #f6f5f1; }
+  tr:last-child td { border-bottom: 0; }
+  .num { font-variant-numeric: tabular-nums; }
+  /* simulated slack feed */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+  .controls select, .controls button { font: inherit; font-size: 14px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; cursor: pointer; }
+  .controls button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .controls input[type=range] { flex: 1; min-width: 160px; accent-color: var(--accent); }
+  .controls .date { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 92px; }
+  .feed { max-height: 560px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 6px 0; }
+  .feed .daysep { text-align: center; font-size: 12px; font-weight: 700; color: var(--muted); margin: 12px 0 4px; letter-spacing: .04em; }
+  .msg { display: grid; grid-template-columns: 36px 1fr; gap: 12px; padding: 8px 16px; }
+  .msg:hover { background: #fafaf8; }
+  .av { width: 36px; height: 36px; border-radius: 8px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 15px; }
+  .msg .who { font-size: 13.5px; font-weight: 700; } .msg .who span { font-weight: 400; color: var(--muted); }
+  .msg .txt { font-size: 14.5px; color: #2b2d3a; }
+  .k { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px; }
+  .k-nudge { background: var(--accent-soft); color: var(--accent); } .k-overdue { background: var(--warm-soft); color: var(--warm); }
+  .k-escalation_1 { background: #fff1d6; color: #8a5a00; } .k-escalation_2, .k-flag { background: var(--bad-soft); color: var(--bad); }
+  .k-date_moved { background: #efe9f8; color: #6a3fb0; } .k-digest, .k-flow_started { background: #eef1ee; color: #3f5a46; }
+  .fakebtn { display: inline-block; margin-top: 6px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); border-radius: 8px; padding: 3px 10px; color: var(--ok); }
+  .feed .empty { padding: 30px; text-align: center; color: var(--muted); }
+  footer { color: var(--muted); font-size: 13.5px; padding: 48px 0 60px; }
+  @media (max-width: 640px) {
+    .ask { flex-wrap: wrap; } .ask button { padding: 12px 18px; }
+    .tl::before { left: 40px; } .tl li { grid-template-columns: 30px 1fr; gap: 22px; } .tl .dot { left: 34px; }
+    th:nth-child(3), td:nth-child(3) { display: none; }
+  }
+</style>
+</head>
+<body>
+<header class="wrap">
+  <div class="eyebrow">People Ops · Handbook</div>
+  <h1>Joining, leaving, and finding answers</h1>
+  <p class="lede">Every step, owner and nudge for joiners and leavers, plus one place to ask. Written for a remote, async team across 30+ time zones.</p>
+</header>
+
+<nav><div class="wrap">
+  <a href="#ask">Ask /people</a><a href="#watch">Watch it run</a><a href="#journeys">Joiner &amp; leaver steps</a><a href="#nudges">How nudges work</a>
+  <a href="#guides">Guide library</a><a href="#rules">Rules we keep</a><a href="#tests">Test plan</a><a href="#measure">What we measure</a>
+</div></nav>
+
+<main class="wrap">
+  <section id="ask">
+    <h2>Ask before you message People Ops</h2>
+    <p class="sub">The same answers the <code>/people</code> Slack command gives. Try one of the questions people ask most.</p>
+    <div class="card">
+      <form class="ask" id="askForm">
+        <span class="cmd">/people</span>
+        <input id="q" placeholder="e.g. how do I apply for leave in Brazil?" autocomplete="off" aria-label="Your question">
+        <button type="submit">Ask</button>
+      </form>
+      <div class="chips" id="chips"></div>
+      <div class="answer" id="answer" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section id="watch">
+    <h2>Watch the bot run</h2>
+    <p class="sub">A replay of every Slack message the bot sends for the two cases in the brief and the test rows, day by day. Press play, or drag through the dates.</p>
+    <div class="card">
+      <div class="controls">
+        <select id="who" aria-label="Choose a case">
+          <option value="">All cases</option>
+        </select>
+        <button class="primary" id="play" type="button">▶ Play</button>
+        <input type="range" id="day" min="0" value="0" aria-label="Day">
+        <span class="date" id="dayLabel"></span>
+        <button id="showAll" type="button">Show all</button>
+      </div>
+      <div class="feed" id="feed"></div>
+    </div>
+  </section>
+
+  <section id="journeys">
+    <h2>Joiner and leaver checkpoints</h2>
+    <p class="sub">Each step has one owner and a date counted from day 0. The bot nudges the owner on the due date.</p>
+    <div class="tabs" role="tablist">
+      <button class="on" data-flow="joiner" role="tab">Joiner</button>
+      <button data-flow="leaver" role="tab">Leaver</button>
+    </div>
+    <p class="case" id="caseLine"></p>
+    <ol class="tl" id="timeline"></ol>
+  </section>
+
+  <section id="nudges">
+    <h2>How nudges and escalations work</h2>
+    <p class="sub">Nobody has to remember. If a step slips, the right person hears about it, once per level.</p>
+    <div class="ladder">
+      <div><div class="when">Due date</div><div class="what">Owner gets a Slack DM</div><span class="badge b-ok">Mark done ✅ button</span></div>
+      <div><div class="when">1 day late</div><div class="what">People Ops lead is told</div></div>
+      <div><div class="when">2 days late, or critical</div><div class="what">The person's lead is told</div><span class="badge b-crit">access, agreement, final pay</span></div>
+      <div><div class="when">Every morning</div><div class="what">Digest + "bot ran ✅" in the private People Ops channel</div></div>
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div class="card"><h3>Start date moves</h3><p>Open steps re-date automatically. Agreement, laptop order and welcome reopen to be rechecked.</p></div>
+      <div class="card"><h3>New country</h3><p>No agreement template on file? A human checks local rules before anything is sent.</p></div>
+      <div class="card"><h3>Short notice</h3><p>Steps already in the past are pulled to today, not flooded as overdue.</p></div>
+      <div class="card"><h3>Silent failure</h3><p>No "bot ran ✅" by 10am means a human checks. Every send is logged. The Tasks tab works as a manual checklist.</p></div>
+    </div>
+  </section>
+
+  <section id="guides">
+    <h2>Guide library</h2>
+    <p class="sub">Every guide has an owner and a review date. Anything older than 6 months is flagged to its owner every Monday.</p>
+    <table><thead><tr><th>Guide</th><th>Owner</th><th>Lives in</th><th>Asked / month</th><th>Status</th></tr></thead><tbody id="guideRows"></tbody></table>
+  </section>
+
+  <section id="rules">
+    <h2>Rules we keep</h2>
+    <div class="grid">
+      <div class="card"><h3>🤝 Human moments stay human</h3><p>The welcome, buddy intro, check-ins and exit call are nudged to a person. The bot never sends them.</p></div>
+      <div class="card"><h3>🔒 Confidential by default</h3><p>Pay, health and legal steps go by DM. /people replies are visible only to the asker. Escalations hide the detail.</p></div>
+      <div class="card"><h3>🧭 Humans decide</h3><p>"My last day is Friday" starts a pending request. People Ops confirms dates before any access changes.</p></div>
+      <div class="card"><h3>🌍 Fair across time zones</h3><p>Everything is written and async. Nudges arrive in the morning; nothing needs a live call to move.</p></div>
+    </div>
+  </section>
+
+  <section id="tests">
+    <h2>Test plan</h2>
+    <p class="sub">Run before any real person depends on it. The sheet's Simulate button replays all of these day by day.</p>
+    <table><thead><tr><th>Case</th><th>Setup</th><th>Expected</th></tr></thead><tbody id="testRows"></tbody></table>
+  </section>
+
+  <section id="measure">
+    <h2>What we measure</h2>
+    <div class="grid">
+      <div class="card"><h3>Time to full access</h3><p>Day 0 accounts ready, measured per joiner.</p></div>
+      <div class="card"><h3>Steps on time</h3><p>% of lifecycle steps done by their due date, by owner.</p></div>
+      <div class="card"><h3>Access removed in 24h</h3><p>% of leavers with all access removed within a day of their last day.</p></div>
+      <div class="card"><h3>Answered without a human</h3><p>% of /people questions matched to a current guide. Gaps become new guides.</p></div>
+      <div class="card"><h3>Guide freshness</h3><p>% of guides reviewed in the last 6 months.</p></div>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">Demo data is fictional. Source of truth: the Lifecycle Kit sheet (People, Steps, Guides, Intents tabs). Owners update dates there; this page and the bot read the same data.</footer>
+
+<script>
+/**
+ * Core.gs — the lifecycle logic, with no Google or Slack calls.
+ * Everything here works on plain objects (one per sheet row), so it can be
+ * tested outside Apps Script. Dates are 'YYYY-MM-DD' strings.
+ */
+var Core = (function () {
+  var DAY = 86400000;
+
+  // ---------- small helpers ----------
+  function ms(iso) { var p = String(iso).slice(0, 10).split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
+  function iso(t) { return new Date(t).toISOString().slice(0, 10); }
+  function addDays(d, n) { return iso(ms(d) + n * DAY); }
+  function diffDays(a, b) { return Math.round((ms(a) - ms(b)) / DAY); } // a minus b
+  function weekday(d) { return new Date(ms(d)).getUTCDay(); }           // 0 Sun .. 6 Sat
+  function yes(v) { return v === true || String(v).trim().toUpperCase() === 'Y'; }
+  function blank(v) { return v === undefined || v === null || String(v).trim() === ''; }
+  function pretty(d) {
+    var m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var x = new Date(ms(d)); return x.getUTCDate() + ' ' + m[x.getUTCMonth()];
+  }
+  function fill(tpl, vars) {
+    return String(tpl).replace(/\{(\w+)\}/g, function (m, k) {
+      return blank(vars[k]) ? '(not set)' : vars[k];
+    });
+  }
+  function indexBy(rows, key) { var o = {}; rows.forEach(function (r) { o[r[key]] = r; }); return o; }
+  function append(notes, line) { return blank(notes) ? line : notes + ' | ' + line; }
+
+  // ---------- owners ----------
+  // Lead and Buddy come from the person's row; every other role from the Roles tab.
+  // If nobody is mapped, the message goes to the People Ops channel instead of disappearing.
+  function resolveOwner(role, person, roles) {
+    var id = role === 'Lead' ? person.lead_slack
+           : role === 'Buddy' ? person.buddy_slack
+           : (roles[role] || {}).slack_id;
+    if (blank(id)) return { to: channel(roles), unmapped: true };
+    return { to: id, unmapped: false };
+  }
+  function channel(roles) { return (roles['People Ops channel'] || {}).slack_id || 'PEOPLE_OPS_CHANNEL'; }
+  function opsLead(roles) { return (roles['People Ops lead'] || {}).slack_id || channel(roles); }
+
+  function vars(person, step, task, templates) {
+    var tpl = templates[person.country + '|' + person.worker_type];
+    return {
+      name: person.name, country: person.country, worker_type: person.worker_type,
+      day0: pretty(person.day0), due: pretty(task.due),
+      deliver_by: pretty(addDays(person.day0, -2)),
+      template: tpl ? tpl.agreement_template : 'MISSING for ' + person.country,
+      shared_logins: blank(person.shared_logins) ? 'NONE LISTED, confirm with the lead' : person.shared_logins,
+      lead: person.lead_slack ? '<@' + person.lead_slack + '>' : 'the lead'
+    };
+  }
+
+  // ---------- 1. reconcile: people + step template -> tasks ----------
+  // Creates missing tasks, re-dates open ones when day 0 moves, reopens steps that
+  // depend on the date (agreement, laptop, welcome), and compresses short-notice cases.
+  function reconcile(people, steps, tasks, today, templatesRows) {
+    var events = [];
+    var byId = indexBy(tasks, 'task_id');
+    var templates = {};
+    (templatesRows || []).forEach(function (t) { templates[t.country + '|' + t.worker_type] = t; });
+
+    people.forEach(function (p) {
+      if (blank(p.id) || blank(p.day0) || /cancel/i.test(p.status || '')) return;
+      var flowSteps = steps.filter(function (s) { return s.flow === p.type; });
+      var created = 0, compressed = 0, redated = [], reopened = [];
+
+      flowSteps.forEach(function (s) {
+        var id = p.id + '-' + s.step_id;
+        var due = addDays(p.day0, Number(s.offset_days));
+        var t = byId[id];
+        if (!t) {
+          t = { task_id: id, person_id: p.id, person_name: p.name, flow: p.type, step_id: s.step_id,
+                step: s.step, owner_role: s.owner_role, due: due, status: 'open',
+                escalation_level: 0, last_nudged: '', done_on: '', done_by: '', notes: '', basis_day0: p.day0 };
+          if (diffDays(due, today) < 0) { t.due = today; t.notes = 'Short notice: due date pulled to today'; compressed++; }
+          tasks.push(t); byId[id] = t; created++;
+          return;
+        }
+        if (t.basis_day0 !== p.day0) {
+          var from = t.due; t.basis_day0 = p.day0; t.escalation_level = 0;
+          t.due = diffDays(due, today) < 0 ? today : due; // never re-date into the past
+          if (t.status === 'done' && yes(s.recheck_if_date_moves)) {
+            t.status = 'open'; t.done_on = ''; t.notes = append(t.notes, 'Reopened: start date moved, recheck');
+            reopened.push(t.step);
+          } else if (t.status === 'open') { redated.push(t.step + ' (' + pretty(from) + ' → ' + pretty(due) + ')'); }
+        }
+      });
+
+      if (created) {
+        events.push({ kind: 'created', person: p, count: created, compressed: compressed });
+        if (p.type === 'joiner' && !templates[p.country + '|' + p.worker_type])
+          events.push({ kind: 'missing_template', person: p });
+        if (p.type === 'leaver' && blank(p.shared_logins))
+          events.push({ kind: 'no_shared_logins', person: p });
+      }
+      if (redated.length || reopened.length)
+        events.push({ kind: 'date_moved', person: p, redated: redated, reopened: reopened });
+    });
+    return events;
+  }
+
+  function eventMessages(events, roles) {
+    var ch = channel(roles);
+    return events.map(function (e) {
+      var p = e.person;
+      if (e.kind === 'created') return { to: ch, kind: 'flow_started', text:
+        '🟢 ' + (p.type === 'joiner' ? 'Joiner' : 'Leaver') + ' flow started for *' + p.name + '* (' + p.country +
+        ', ' + p.worker_type + '), day 0 = ' + pretty(p.day0) + '. ' + e.count + ' steps scheduled.' +
+        (e.compressed ? ' ⚠️ Short notice: ' + e.compressed + ' steps are already due today.' : '') };
+      if (e.kind === 'missing_template') return { to: ch, kind: 'flag', text:
+        '🚩 No agreement template for *' + p.worker_type + ' in ' + p.country + '*. A human must check local rules before ' +
+        p.name + '\'s agreement goes out. Add the template to the Templates tab once confirmed.' };
+      if (e.kind === 'no_shared_logins') return { to: ch, kind: 'flag', text:
+        '🚩 *' + p.name + '* is leaving and has no shared logins listed. Ask the lead to confirm before the access step.' };
+      if (e.kind === 'date_moved') return { to: ch, kind: 'date_moved', text:
+        '📅 Day 0 for *' + p.name + '* is now ' + pretty(p.day0) + '. ' +
+        (e.redated.length ? 'Re-dated: ' + e.redated.length + ' open steps. ' : '') +
+        (e.reopened.length ? 'Reopened to recheck: ' + e.reopened.join(', ') + '.' : '') };
+      return null;
+    }).filter(Boolean);
+  }
+
+  // ---------- 2. daily plan: who gets nudged / escalated today ----------
+  function planDaily(today, ctx, cfg) {
+    cfg = cfg || {};
+    var roles = indexBy(ctx.roles, 'role');
+    var people = indexBy(ctx.people, 'id');
+    var steps = indexBy(ctx.steps, 'step_id');
+    var templates = {};
+    (ctx.templates || []).forEach(function (t) { templates[t.country + '|' + t.worker_type] = t; });
+    var out = [], stuck = [];
+
+    ctx.tasks.forEach(function (t) {
+      if (t.status !== 'open') return;
+      var p = people[t.person_id], s = steps[t.step_id];
+      if (!p || !s || /cancel/i.test(p.status || '')) return;
+      var late = diffDays(today, t.due);
+      if (late < 0) return;
+
+      var v = vars(p, s, t, templates);
+      var human = yes(s.human_moment), crit = yes(s.critical), sens = yes(s.sensitive);
+      // Candidate is not on Slack yet: People Ops chases by email.
+      var owner = s.owner_role === 'Candidate'
+        ? resolveOwner('People Ops', p, roles)
+        : resolveOwner(s.owner_role, p, roles);
+      var prefix = owner.unmapped ? '⚠️ No Slack owner mapped for role "' + s.owner_role + '". ' : '';
+      // Never post a confidential step's details into a channel.
+      if (sens && owner.unmapped) {
+        out.push({ to: owner.to, kind: 'flag', task_id: t.task_id,
+          text: '⚠️ A confidential step for *' + p.name + '* has no owner mapped. See the Tasks tab.' });
+        t.last_nudged = today; return;
+      }
+
+      if (late === 0) {
+        out.push({ to: owner.to, kind: 'nudge', task_id: t.task_id, button: true, sensitive: sens,
+          text: prefix + (human ? '🤝 ' : '🔔 ') + fill(s.nudge_text, v) + (human ? ' _(Human moment: please do this personally.)_' : '') });
+      } else {
+        out.push({ to: owner.to, kind: 'overdue', task_id: t.task_id, button: true, sensitive: sens,
+          text: prefix + '⏰ ' + late + ' day' + (late > 1 ? 's' : '') + ' overdue: ' + fill(s.nudge_text, v) });
+        stuck.push({ t: t, p: p, late: late, sens: sens });
+
+        var level = crit ? 2 : (late >= (cfg.managerAfter || 2) ? 2 : 1);
+        var who = sens ? 'A confidential step for *' + p.name + '*' : '*' + t.step + '* for *' + p.name + '*';
+        if (level >= 1 && Number(t.escalation_level) < 1) {
+          out.push({ to: opsLead(roles), kind: 'escalation_1', task_id: t.task_id,
+            text: '🟠 Escalation: ' + who + ' is ' + late + ' day(s) late (owner: ' + s.owner_role + ').' });
+        }
+        if (level >= 2 && Number(t.escalation_level) < 2) {
+          var mgr = p.lead_slack || opsLead(roles);
+          out.push({ to: mgr, kind: 'escalation_2', task_id: t.task_id,
+            text: '🔴 Escalation: ' + who + ' is ' + late + ' day(s) late' + (crit ? ' and is critical' : '') +
+                  '. Please help unblock (owner: ' + s.owner_role + ').' });
+        }
+        t.escalation_level = Math.max(Number(t.escalation_level) || 0, level);
+      }
+      t.last_nudged = today;
+    });
+
+    // Daily digest to the private People Ops channel
+    var ch = channel(roles);
+    var soon = ctx.people.filter(function (p) {
+      var d = diffDays(p.day0, today); return d >= 0 && d <= 14 && !/cancel/i.test(p.status || '');
+    }).map(function (p) { return '• ' + (p.type === 'joiner' ? '➡️ joining ' : '⬅️ leaving ') + pretty(p.day0) + ': ' + p.name; });
+    var stuckLines = stuck.map(function (x) {
+      return '• ' + x.p.name + ': ' + (x.sens ? 'confidential step' : x.t.step) + ' (' + x.late + 'd late, ' + x.t.owner_role + ')';
+    });
+    var digest = '*Lifecycle digest, ' + pretty(today) + '*\n' +
+      '*Next 14 days*\n' + (soon.length ? soon.join('\n') : '• nobody') + '\n' +
+      '*Stuck*\n' + (stuckLines.length ? stuckLines.join('\n') : '• nothing overdue 🎉');
+
+    // Monday: stale guides + unanswered question gaps
+    if (weekday(today) === 1) {
+      var stale = (ctx.guides || []).filter(function (g) {
+        return blank(g.last_updated) || diffDays(today, g.last_updated) > (cfg.staleDays || 180);
+      }).map(function (g) { return '• ' + g.title + ' (' + g.owner_role + '): ' + (blank(g.last_updated) ? 'never reviewed' : 'last reviewed ' + Math.round(diffDays(today, g.last_updated) / 30) + ' months ago'); });
+      var gaps = (ctx.questions || []).filter(function (q) { return q.matched === 'GAP' && diffDays(today, q.date) <= 7; });
+      digest += '\n*Guides to review (stale)*\n' + (stale.length ? stale.join('\n') : '• all current') +
+        '\n*Questions with no guide this week:* ' + gaps.length;
+    }
+    out.push({ to: ch, kind: 'digest', text: digest });
+    var n = out.filter(function (m) { return m.kind === 'nudge' || m.kind === 'overdue'; }).length;
+    var e = out.filter(function (m) { return /^escalation/.test(m.kind); }).length;
+    out.push({ to: ch, kind: 'heartbeat', text: '✅ Lifecycle bot ran ' + pretty(today) + ': ' + n + ' nudges, ' + e + ' escalations.' });
+    return out;
+  }
+
+  // ---------- 3. /people command: question -> guide, owner, answer, action ----------
+  var COUNTRIES = ['brazil','spain','india','united states','usa','us','kenya','portugal','france','canada',
+                   'singapore','philippines','indonesia','nigeria','pakistan','vietnam','mexico','germany','uk'];
+
+  function matchQuestion(text, intents, guides, today, staleDays) {
+    var q = ' ' + String(text || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ') + ' ';
+    var best = null, bestScore = 0;
+    intents.forEach(function (it) {
+      var score = 0;
+      String(it.keywords).split('|').forEach(function (k) {
+        k = k.trim().toLowerCase(); if (!k) return;
+        if (q.indexOf(' ' + k + ' ') >= 0) score += k.split(' ').length;
+      });
+      if (score > bestScore) { bestScore = score; best = it; }
+    });
+    var country = '';
+    COUNTRIES.forEach(function (c) { if (!country && q.indexOf(' ' + c + ' ') >= 0) country = c; });
+    if (!best) return { matched: 'GAP', sensitive: false, action: 'route_people_ops',
+      text: "I couldn't find a guide for that yet. I've passed it to People Ops, and you'll hear back within 1 working day." };
+
+    var g = indexBy(guides, 'guide_id')[best.guide_id];
+    var countryNote = country ? ' for ' + country.replace(/\b\w/g, function (c) { return c.toUpperCase(); }) : '';
+    var lines = [fill(best.answer, { country_note: countryNote })];
+    if (g) {
+      var age = blank(g.last_updated) ? null : diffDays(today, g.last_updated);
+      var fresh = age === null ? '⚠️ never reviewed; owner asked to confirm'
+                : age > (staleDays || 180) ? '⚠️ last reviewed ' + Math.round(age / 30) + ' months ago; owner asked to confirm'
+                : 'reviewed ' + pretty(g.last_updated);
+      lines.unshift('*' + g.title + '* (owner: ' + g.owner_role + ')');
+      lines.push('🔗 <' + g.link + '|Open the guide> · ' + fresh);
+    } else {
+      lines.push('_No guide exists for this yet; logged as a gap for People Ops._');
+    }
+    if (yes(best.sensitive)) lines.push('🔒 Only you can see this reply.');
+    return { matched: best.intent_id, guide: g, sensitive: yes(best.sensitive), action: best.action || '',
+             stale: !!(g && (blank(g.last_updated) || diffDays(today, g.last_updated) > (staleDays || 180))),
+             text: lines.join('\n') };
+  }
+
+  return { reconcile: reconcile, eventMessages: eventMessages, planDaily: planDaily,
+           matchQuestion: matchQuestion, addDays: addDays, diffDays: diffDays, pretty: pretty };
+})();
+
+if (typeof module !== 'undefined') module.exports = Core; // for local tests only
+
+</script>
+<script>
+const DATA = {"sim": [{"date": "2026-10-13", "to": "C_PEOPLEOPS_PRIVATE", "kind": "flow_started", "message": "🟢 Joiner flow started for *Demo joiner (Spain)* (Spain, contractor), day 0 = 27 Oct. 14 steps scheduled.", "task_id": ""}, {"date": "2026-10-13", "to": "U_HIRING", "kind": "nudge", "message": "🔔 Send Demo joiner (Spain)'s contractor agreement for Spain today. Template: https://example.com/templates/contractor-spain. Start date in the agreement must be 27 Oct.", "task_id": "J-ES-01-J01"}, {"date": "2026-10-17", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Demo joiner (Spain) hasn't signed yet. Chase by email today; agreement must be signed before accounts are created.", "task_id": "J-ES-01-J02"}, {"date": "2026-10-18", "to": "U_PEOPLEOPS", "kind": "overdue", "message": "⏰ 1 day overdue: Demo joiner (Spain) hasn't signed yet. Chase by email today; agreement must be signed before accounts are created.", "task_id": "J-ES-01-J02"}, {"date": "2026-10-18", "to": "U_PEOPLEOPS_LEAD", "kind": "escalation_1", "message": "🟠 Escalation: *Agreement signed* for *Demo joiner (Spain)* is 1 day(s) late (owner: Candidate).", "task_id": "J-ES-01-J02"}, {"date": "2026-10-18", "to": "U_LEAD_MKT", "kind": "escalation_2", "message": "🔴 Escalation: *Agreement signed* for *Demo joiner (Spain)* is 1 day(s) late and is critical. Please help unblock (owner: Candidate).", "task_id": "J-ES-01-J02"}, {"date": "2026-10-18", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 18 Oct*\n*Next 14 days*\n• ➡️ joining 27 Oct: Demo joiner (Spain)\n*Stuck*\n• Demo joiner (Spain): Agreement signed (1d late, Candidate)", "task_id": ""}, {"date": "2026-10-19", "to": "U_PEOPLEOPS", "kind": "overdue", "message": "⏰ 2 days overdue: Demo joiner (Spain) hasn't signed yet. Chase by email today; agreement must be signed before accounts are created.", "task_id": "J-ES-01-J02"}, {"date": "2026-10-19", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 19 Oct*\n*Next 14 days*\n• ➡️ joining 27 Oct: Demo joiner (Spain)\n*Stuck*\n• Demo joiner (Spain): Agreement signed (2d late, Candidate)\n*Guides to review (stale)*\n• Leave policy (People Ops): last reviewed 13 months ago\n• Laptop and equipment policy (People Ops): last reviewed 23 months ago\n• Leaver checklist (People Ops): never reviewed\n• Benefits and perks FAQ (People Ops): last reviewed 7 months ago\n*Questions with no guide this week:* 0", "task_id": ""}, {"date": "2026-10-20", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Collect Demo joiner (Spain)'s payment details in the payments platform. Keep this out of public channels.", "task_id": "J-ES-01-J03"}, {"date": "2026-10-20", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Order Demo joiner (Spain)'s laptop for delivery by 25 Oct (Spain). If the start date moves, update the order.", "task_id": "J-ES-01-J04"}, {"date": "2026-10-21", "to": "C_PEOPLEOPS_PRIVATE", "kind": "date_moved", "message": "📅 Day 0 for *Demo joiner (Spain)* is now 3 Nov. Re-dated: 10 open steps. Reopened to recheck: Send agreement (country template), Agreement signed, Order laptop (deliver 2 days before start).", "task_id": ""}, {"date": "2026-10-21", "to": "U_HIRING", "kind": "nudge", "message": "🔔 Send Demo joiner (Spain)'s contractor agreement for Spain today. Template: https://example.com/templates/contractor-spain. Start date in the agreement must be 3 Nov.", "task_id": "J-ES-01-J01"}, {"date": "2026-10-24", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Demo joiner (Spain) hasn't signed yet. Chase by email today; agreement must be signed before accounts are created.", "task_id": "J-ES-01-J02"}, {"date": "2026-10-25", "to": "U_PEOPLEOPS", "kind": "overdue", "message": "⏰ 1 day overdue: Demo joiner (Spain) hasn't signed yet. Chase by email today; agreement must be signed before accounts are created.", "task_id": "J-ES-01-J02"}, {"date": "2026-10-25", "to": "U_PEOPLEOPS_LEAD", "kind": "escalation_1", "message": "🟠 Escalation: *Agreement signed* for *Demo joiner (Spain)* is 1 day(s) late (owner: Candidate).", "task_id": "J-ES-01-J02"}, {"date": "2026-10-25", "to": "U_LEAD_MKT", "kind": "escalation_2", "message": "🔴 Escalation: *Agreement signed* for *Demo joiner (Spain)* is 1 day(s) late and is critical. Please help unblock (owner: Candidate).", "task_id": "J-ES-01-J02"}, {"date": "2026-10-25", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 25 Oct*\n*Next 14 days*\n• ➡️ joining 3 Nov: Demo joiner (Spain)\n*Stuck*\n• Demo joiner (Spain): Agreement signed (1d late, Candidate)", "task_id": ""}, {"date": "2026-10-26", "to": "U_PEOPLEOPS", "kind": "overdue", "message": "⏰ 2 days overdue: Demo joiner (Spain) hasn't signed yet. Chase by email today; agreement must be signed before accounts are created.", "task_id": "J-ES-01-J02"}, {"date": "2026-10-26", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 26 Oct*\n*Next 14 days*\n• ➡️ joining 3 Nov: Demo joiner (Spain)\n*Stuck*\n• Demo joiner (Spain): Agreement signed (2d late, Candidate)\n*Guides to review (stale)*\n• Leave policy (People Ops): last reviewed 14 months ago\n• Laptop and equipment policy (People Ops): last reviewed 24 months ago\n• Leaver checklist (People Ops): never reviewed\n• Benefits and perks FAQ (People Ops): last reviewed 7 months ago\n*Questions with no guide this week:* 0", "task_id": ""}, {"date": "2026-10-27", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Order Demo joiner (Spain)'s laptop for delivery by 1 Nov (Spain). If the start date moves, update the order.", "task_id": "J-ES-01-J04"}, {"date": "2026-10-31", "to": "U_IT", "kind": "nudge", "message": "🔔 Create Demo joiner (Spain)'s Google Workspace, Slack and Notion accounts. Start date 3 Nov.", "task_id": "J-ES-01-J05"}, {"date": "2026-10-31", "to": "U_IT", "kind": "nudge", "message": "🔔 Assign security training to Demo joiner (Spain) so it's ready on day 0.", "task_id": "J-ES-01-J06"}, {"date": "2026-11-02", "to": "U_LEAD_MKT", "kind": "nudge", "message": "🤝 Demo joiner (Spain) starts tomorrow. Please write them a personal welcome. This one is yours, no template. _(Human moment: please do this personally.)_", "task_id": "J-ES-01-J07"}, {"date": "2026-11-02", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 2 Nov*\n*Next 14 days*\n• ➡️ joining 3 Nov: Demo joiner (Spain)\n*Stuck*\n• nothing overdue 🎉\n*Guides to review (stale)*\n• Leave policy (People Ops): last reviewed 14 months ago\n• Laptop and equipment policy (People Ops): last reviewed 24 months ago\n• Leaver checklist (People Ops): never reviewed\n• Benefits and perks FAQ (People Ops): last reviewed 8 months ago\n*Questions with no guide this week:* 0", "task_id": ""}, {"date": "2026-11-03", "to": "U_BUDDY_1", "kind": "nudge", "message": "🤝 Demo joiner (Spain) starts today. Say hello and book a 20-minute intro this week. _(Human moment: please do this personally.)_", "task_id": "J-ES-01-J08"}, {"date": "2026-11-03", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🤝 Run Demo joiner (Spain)'s onboarding call today and add them to the cohort channel. _(Human moment: please do this personally.)_", "task_id": "J-ES-01-J09"}, {"date": "2026-11-07", "to": "C_PEOPLEOPS_PRIVATE", "kind": "flow_started", "message": "🟢 Leaver flow started for *Demo leaver (Brazil)* (Brazil, employee), day 0 = 14 Nov. 9 steps scheduled.", "task_id": ""}, {"date": "2026-11-07", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🤝 Book an exit call with Demo leaver (Brazil) (last day 14 Nov). This stays a human conversation. _(Human moment: please do this personally.)_", "task_id": "L-BR-01-L01"}, {"date": "2026-11-07", "to": "U_LEAD_SALES", "kind": "nudge", "message": "🔔 Name who takes over Demo leaver (Brazil)'s work and share the handover doc.", "task_id": "L-BR-01-L02"}, {"date": "2026-11-08", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Day 5 for Demo joiner (Spain): check tool onboarding is complete and nothing is blocked.", "task_id": "J-ES-01-J10"}, {"date": "2026-11-09", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 9 Nov*\n*Next 14 days*\n• ⬅️ leaving 14 Nov: Demo leaver (Brazil)\n*Stuck*\n• nothing overdue 🎉\n*Guides to review (stale)*\n• Leave policy (People Ops): last reviewed 14 months ago\n• Laptop and equipment policy (People Ops): last reviewed 24 months ago\n• Leaver checklist (People Ops): never reviewed\n• Benefits and perks FAQ (People Ops): last reviewed 8 months ago\n*Questions with no guide this week:* 0", "task_id": ""}, {"date": "2026-11-10", "to": "U_LEAD_MKT", "kind": "nudge", "message": "🤝 Week 1 check-in with Demo joiner (Spain) is due today. _(Human moment: please do this personally.)_", "task_id": "J-ES-01-J11"}, {"date": "2026-11-11", "to": "U_IT", "kind": "nudge", "message": "🔔 Prepare Demo leaver (Brazil)'s asset and access list. Shared logins on record: Canva team login; Ads manager account; shared 1Password vault.", "task_id": "L-BR-01-L03"}, {"date": "2026-11-13", "to": "U_IT", "kind": "nudge", "message": "🔔 Rotate shared passwords (Canva team login; Ads manager account; shared 1Password vault) and move ownership of Demo leaver (Brazil)'s Drive and Notion files to the handover owner.", "task_id": "L-BR-01-L04"}, {"date": "2026-11-14", "to": "U_IT", "kind": "nudge", "message": "🔔 Today is Demo leaver (Brazil)'s last day. Remove Slack, Google, Notion and tool access by end of day and mark done.", "task_id": "L-BR-01-L05"}, {"date": "2026-11-14", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Calculate Demo leaver (Brazil)'s final payment. Confidential: do not discuss in public channels.", "task_id": "L-BR-01-L06"}, {"date": "2026-11-15", "to": "U_IT", "kind": "overdue", "message": "⏰ 1 day overdue: Today is Demo leaver (Brazil)'s last day. Remove Slack, Google, Notion and tool access by end of day and mark done.", "task_id": "L-BR-01-L05"}, {"date": "2026-11-15", "to": "U_PEOPLEOPS_LEAD", "kind": "escalation_1", "message": "🟠 Escalation: *Remove access (Slack, email, Notion, tools) by end of day* for *Demo leaver (Brazil)* is 1 day(s) late (owner: IT).", "task_id": "L-BR-01-L05"}, {"date": "2026-11-15", "to": "U_LEAD_SALES", "kind": "escalation_2", "message": "🔴 Escalation: *Remove access (Slack, email, Notion, tools) by end of day* for *Demo leaver (Brazil)* is 1 day(s) late and is critical. Please help unblock (owner: IT).", "task_id": "L-BR-01-L05"}, {"date": "2026-11-15", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Send Demo leaver (Brazil) the exit survey (personal email).", "task_id": "L-BR-01-L07"}, {"date": "2026-11-15", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 15 Nov*\n*Next 14 days*\n• nobody\n*Stuck*\n• Demo leaver (Brazil): Remove access (Slack, email, Notion, tools) by end of day (1d late, IT)", "task_id": ""}, {"date": "2026-11-16", "to": "C_PEOPLEOPS_PRIVATE", "kind": "flow_started", "message": "🟢 Joiner flow started for *TEST fake joiner (happy path)* (India, contractor), day 0 = 30 Nov. 14 steps scheduled.", "task_id": ""}, {"date": "2026-11-16", "to": "U_HIRING", "kind": "nudge", "message": "🔔 Send TEST fake joiner (happy path)'s contractor agreement for India today. Template: https://example.com/templates/contractor-india. Start date in the agreement must be 30 Nov.", "task_id": "T-FAKE-01-J01"}, {"date": "2026-11-16", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 16 Nov*\n*Next 14 days*\n• ➡️ joining 30 Nov: TEST fake joiner (happy path)\n*Stuck*\n• nothing overdue 🎉\n*Guides to review (stale)*\n• Leave policy (People Ops): last reviewed 14 months ago\n• Laptop and equipment policy (People Ops): last reviewed 24 months ago\n• Expense and reimbursement guide (Finance): last reviewed 6 months ago\n• Leaver checklist (People Ops): never reviewed\n• Benefits and perks FAQ (People Ops): last reviewed 8 months ago\n*Questions with no guide this week:* 0", "task_id": ""}, {"date": "2026-11-17", "to": "U_BUDDY_1", "kind": "nudge", "message": "🤝 Week 2 buddy check-in with Demo joiner (Spain) is due today. _(Human moment: please do this personally.)_", "task_id": "J-ES-01-J12"}, {"date": "2026-11-18", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 No exit survey reply from Demo leaver (Brazil) yet? Send one friendly follow-up, then close.", "task_id": "L-BR-01-L08"}, {"date": "2026-11-20", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 TEST fake joiner (happy path) hasn't signed yet. Chase by email today; agreement must be signed before accounts are created.", "task_id": "T-FAKE-01-J02"}, {"date": "2026-11-21", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Confirm Demo leaver (Brazil)'s laptop has been returned or collected.", "task_id": "L-BR-01-L09"}, {"date": "2026-11-23", "to": "C_PEOPLEOPS_PRIVATE", "kind": "flow_started", "message": "🟢 Joiner flow started for *TEST contractor in new country (Kenya)* (Kenya, contractor), day 0 = 7 Dec. 14 steps scheduled.", "task_id": ""}, {"date": "2026-11-23", "to": "C_PEOPLEOPS_PRIVATE", "kind": "flag", "message": "🚩 No agreement template for *contractor in Kenya*. A human must check local rules before TEST contractor in new country (Kenya)'s agreement goes out. Add the template to the Templates tab once confirmed.", "task_id": ""}, {"date": "2026-11-23", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Collect TEST fake joiner (happy path)'s payment details in the payments platform. Keep this out of public channels.", "task_id": "T-FAKE-01-J03"}, {"date": "2026-11-23", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Order TEST fake joiner (happy path)'s laptop for delivery by 28 Nov (India). If the start date moves, update the order.", "task_id": "T-FAKE-01-J04"}, {"date": "2026-11-23", "to": "U_HIRING", "kind": "nudge", "message": "🔔 Send TEST contractor in new country (Kenya)'s contractor agreement for Kenya today. Template: MISSING for Kenya. Start date in the agreement must be 7 Dec.", "task_id": "T-KE-01-J01"}, {"date": "2026-11-23", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 23 Nov*\n*Next 14 days*\n• ➡️ joining 30 Nov: TEST fake joiner (happy path)\n• ➡️ joining 7 Dec: TEST contractor in new country (Kenya)\n*Stuck*\n• nothing overdue 🎉\n*Guides to review (stale)*\n• Leave policy (People Ops): last reviewed 14 months ago\n• Laptop and equipment policy (People Ops): last reviewed 25 months ago\n• Expense and reimbursement guide (Finance): last reviewed 6 months ago\n• Leaver checklist (People Ops): never reviewed\n• Benefits and perks FAQ (People Ops): last reviewed 8 months ago\n*Questions with no guide this week:* 0", "task_id": ""}, {"date": "2026-11-24", "to": "U_HIRING", "kind": "overdue", "message": "⏰ 1 day overdue: Send TEST contractor in new country (Kenya)'s contractor agreement for Kenya today. Template: MISSING for Kenya. Start date in the agreement must be 7 Dec.", "task_id": "T-KE-01-J01"}, {"date": "2026-11-24", "to": "U_PEOPLEOPS_LEAD", "kind": "escalation_1", "message": "🟠 Escalation: *Send agreement (country template)* for *TEST contractor in new country (Kenya)* is 1 day(s) late (owner: Hiring coordinator).", "task_id": "T-KE-01-J01"}, {"date": "2026-11-24", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 24 Nov*\n*Next 14 days*\n• ➡️ joining 30 Nov: TEST fake joiner (happy path)\n• ➡️ joining 7 Dec: TEST contractor in new country (Kenya)\n*Stuck*\n• TEST contractor in new country (Kenya): Send agreement (country template) (1d late, Hiring coordinator)", "task_id": ""}, {"date": "2026-11-25", "to": "U_HIRING", "kind": "overdue", "message": "⏰ 2 days overdue: Send TEST contractor in new country (Kenya)'s contractor agreement for Kenya today. Template: MISSING for Kenya. Start date in the agreement must be 7 Dec.", "task_id": "T-KE-01-J01"}, {"date": "2026-11-25", "to": "U_LEAD_OPS", "kind": "escalation_2", "message": "🔴 Escalation: *Send agreement (country template)* for *TEST contractor in new country (Kenya)* is 2 day(s) late. Please help unblock (owner: Hiring coordinator).", "task_id": "T-KE-01-J01"}, {"date": "2026-11-25", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 25 Nov*\n*Next 14 days*\n• ➡️ joining 30 Nov: TEST fake joiner (happy path)\n• ➡️ joining 7 Dec: TEST contractor in new country (Kenya)\n*Stuck*\n• TEST contractor in new country (Kenya): Send agreement (country template) (2d late, Hiring coordinator)", "task_id": ""}, {"date": "2026-11-26", "to": "U_HIRING", "kind": "overdue", "message": "⏰ 3 days overdue: Send TEST contractor in new country (Kenya)'s contractor agreement for Kenya today. Template: MISSING for Kenya. Start date in the agreement must be 7 Dec.", "task_id": "T-KE-01-J01"}, {"date": "2026-11-26", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 26 Nov*\n*Next 14 days*\n• ➡️ joining 30 Nov: TEST fake joiner (happy path)\n• ➡️ joining 7 Dec: TEST contractor in new country (Kenya)\n*Stuck*\n• TEST contractor in new country (Kenya): Send agreement (country template) (3d late, Hiring coordinator)", "task_id": ""}, {"date": "2026-11-27", "to": "U_IT", "kind": "nudge", "message": "🔔 Create TEST fake joiner (happy path)'s Google Workspace, Slack and Notion accounts. Start date 30 Nov.", "task_id": "T-FAKE-01-J05"}, {"date": "2026-11-27", "to": "U_IT", "kind": "nudge", "message": "🔔 Assign security training to TEST fake joiner (happy path) so it's ready on day 0.", "task_id": "T-FAKE-01-J06"}, {"date": "2026-11-27", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 TEST contractor in new country (Kenya) hasn't signed yet. Chase by email today; agreement must be signed before accounts are created.", "task_id": "T-KE-01-J02"}, {"date": "2026-11-29", "to": "C_PEOPLEOPS_PRIVATE", "kind": "flow_started", "message": "🟢 Leaver flow started for *TEST short-notice leaver (no shared logins listed)* (United States, contractor), day 0 = 2 Dec. 9 steps scheduled. ⚠️ Short notice: 2 steps are already due today.", "task_id": ""}, {"date": "2026-11-29", "to": "C_PEOPLEOPS_PRIVATE", "kind": "flag", "message": "🚩 *TEST short-notice leaver (no shared logins listed)* is leaving and has no shared logins listed. Ask the lead to confirm before the access step.", "task_id": ""}, {"date": "2026-11-29", "to": "U_LEAD_OPS", "kind": "nudge", "message": "🤝 TEST fake joiner (happy path) starts tomorrow. Please write them a personal welcome. This one is yours, no template. _(Human moment: please do this personally.)_", "task_id": "T-FAKE-01-J07"}, {"date": "2026-11-29", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🤝 Book an exit call with TEST short-notice leaver (no shared logins listed) (last day 2 Dec). This stays a human conversation. _(Human moment: please do this personally.)_", "task_id": "T-US-01-L01"}, {"date": "2026-11-29", "to": "U_LEAD_OPS", "kind": "nudge", "message": "🔔 Name who takes over TEST short-notice leaver (no shared logins listed)'s work and share the handover doc.", "task_id": "T-US-01-L02"}, {"date": "2026-11-29", "to": "U_IT", "kind": "nudge", "message": "🔔 Prepare TEST short-notice leaver (no shared logins listed)'s asset and access list. Shared logins on record: NONE LISTED, confirm with the lead.", "task_id": "T-US-01-L03"}, {"date": "2026-11-30", "to": "U_BUDDY_2", "kind": "nudge", "message": "🤝 TEST fake joiner (happy path) starts today. Say hello and book a 20-minute intro this week. _(Human moment: please do this personally.)_", "task_id": "T-FAKE-01-J08"}, {"date": "2026-11-30", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🤝 Run TEST fake joiner (happy path)'s onboarding call today and add them to the cohort channel. _(Human moment: please do this personally.)_", "task_id": "T-FAKE-01-J09"}, {"date": "2026-11-30", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Collect TEST contractor in new country (Kenya)'s payment details in the payments platform. Keep this out of public channels.", "task_id": "T-KE-01-J03"}, {"date": "2026-11-30", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Order TEST contractor in new country (Kenya)'s laptop for delivery by 5 Dec (Kenya). If the start date moves, update the order.", "task_id": "T-KE-01-J04"}, {"date": "2026-11-30", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 30 Nov*\n*Next 14 days*\n• ➡️ joining 30 Nov: TEST fake joiner (happy path)\n• ➡️ joining 7 Dec: TEST contractor in new country (Kenya)\n• ⬅️ leaving 2 Dec: TEST short-notice leaver (no shared logins listed)\n*Stuck*\n• nothing overdue 🎉\n*Guides to review (stale)*\n• Leave policy (People Ops): last reviewed 15 months ago\n• Laptop and equipment policy (People Ops): last reviewed 25 months ago\n• Expense and reimbursement guide (Finance): last reviewed 7 months ago\n• Leaver checklist (People Ops): never reviewed\n• Benefits and perks FAQ (People Ops): last reviewed 9 months ago\n*Questions with no guide this week:* 0", "task_id": ""}, {"date": "2026-12-01", "to": "U_IT", "kind": "nudge", "message": "🔔 Rotate shared passwords (NONE LISTED, confirm with the lead) and move ownership of TEST short-notice leaver (no shared logins listed)'s Drive and Notion files to the handover owner.", "task_id": "T-US-01-L04"}, {"date": "2026-12-02", "to": "U_IT", "kind": "nudge", "message": "🔔 Today is TEST short-notice leaver (no shared logins listed)'s last day. Remove Slack, Google, Notion and tool access by end of day and mark done.", "task_id": "T-US-01-L05"}, {"date": "2026-12-02", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Calculate TEST short-notice leaver (no shared logins listed)'s final payment. Confidential: do not discuss in public channels.", "task_id": "T-US-01-L06"}, {"date": "2026-12-03", "to": "U_LEAD_MKT", "kind": "nudge", "message": "🤝 Day 30 check-in with Demo joiner (Spain) is due today. _(Human moment: please do this personally.)_", "task_id": "J-ES-01-J13"}, {"date": "2026-12-03", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Send TEST short-notice leaver (no shared logins listed) the exit survey (personal email).", "task_id": "T-US-01-L07"}, {"date": "2026-12-04", "to": "U_IT", "kind": "nudge", "message": "🔔 Create TEST contractor in new country (Kenya)'s Google Workspace, Slack and Notion accounts. Start date 7 Dec.", "task_id": "T-KE-01-J05"}, {"date": "2026-12-04", "to": "U_IT", "kind": "nudge", "message": "🔔 Assign security training to TEST contractor in new country (Kenya) so it's ready on day 0.", "task_id": "T-KE-01-J06"}, {"date": "2026-12-05", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Day 5 for TEST fake joiner (happy path): check tool onboarding is complete and nothing is blocked.", "task_id": "T-FAKE-01-J10"}, {"date": "2026-12-06", "to": "U_LEAD_OPS", "kind": "nudge", "message": "🤝 TEST contractor in new country (Kenya) starts tomorrow. Please write them a personal welcome. This one is yours, no template. _(Human moment: please do this personally.)_", "task_id": "T-KE-01-J07"}, {"date": "2026-12-06", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 No exit survey reply from TEST short-notice leaver (no shared logins listed) yet? Send one friendly follow-up, then close.", "task_id": "T-US-01-L08"}, {"date": "2026-12-07", "to": "U_LEAD_OPS", "kind": "nudge", "message": "🤝 Week 1 check-in with TEST fake joiner (happy path) is due today. _(Human moment: please do this personally.)_", "task_id": "T-FAKE-01-J11"}, {"date": "2026-12-07", "to": "U_BUDDY_2", "kind": "nudge", "message": "🤝 TEST contractor in new country (Kenya) starts today. Say hello and book a 20-minute intro this week. _(Human moment: please do this personally.)_", "task_id": "T-KE-01-J08"}, {"date": "2026-12-07", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🤝 Run TEST contractor in new country (Kenya)'s onboarding call today and add them to the cohort channel. _(Human moment: please do this personally.)_", "task_id": "T-KE-01-J09"}, {"date": "2026-12-07", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 7 Dec*\n*Next 14 days*\n• ➡️ joining 7 Dec: TEST contractor in new country (Kenya)\n*Stuck*\n• nothing overdue 🎉\n*Guides to review (stale)*\n• Leave policy (People Ops): last reviewed 15 months ago\n• Laptop and equipment policy (People Ops): last reviewed 25 months ago\n• Expense and reimbursement guide (Finance): last reviewed 7 months ago\n• Leaver checklist (People Ops): never reviewed\n• Benefits and perks FAQ (People Ops): last reviewed 9 months ago\n*Questions with no guide this week:* 0", "task_id": ""}, {"date": "2026-12-09", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Confirm TEST short-notice leaver (no shared logins listed)'s laptop has been returned or collected.", "task_id": "T-US-01-L09"}, {"date": "2026-12-12", "to": "U_PEOPLEOPS", "kind": "nudge", "message": "🔔 Day 5 for TEST contractor in new country (Kenya): check tool onboarding is complete and nothing is blocked.", "task_id": "T-KE-01-J10"}, {"date": "2026-12-14", "to": "U_BUDDY_2", "kind": "nudge", "message": "🤝 Week 2 buddy check-in with TEST fake joiner (happy path) is due today. _(Human moment: please do this personally.)_", "task_id": "T-FAKE-01-J12"}, {"date": "2026-12-14", "to": "U_LEAD_OPS", "kind": "nudge", "message": "🤝 Week 1 check-in with TEST contractor in new country (Kenya) is due today. _(Human moment: please do this personally.)_", "task_id": "T-KE-01-J11"}, {"date": "2026-12-14", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 14 Dec*\n*Next 14 days*\n• nobody\n*Stuck*\n• nothing overdue 🎉\n*Guides to review (stale)*\n• Leave policy (People Ops): last reviewed 15 months ago\n• Laptop and equipment policy (People Ops): last reviewed 25 months ago\n• Expense and reimbursement guide (Finance): last reviewed 7 months ago\n• Leaver checklist (People Ops): never reviewed\n• Benefits and perks FAQ (People Ops): last reviewed 9 months ago\n• Security and tools access guide (IT): last reviewed 6 months ago\n*Questions with no guide this week:* 0", "task_id": ""}, {"date": "2026-12-21", "to": "U_BUDDY_2", "kind": "nudge", "message": "🤝 Week 2 buddy check-in with TEST contractor in new country (Kenya) is due today. _(Human moment: please do this personally.)_", "task_id": "T-KE-01-J12"}, {"date": "2026-12-21", "to": "C_PEOPLEOPS_PRIVATE", "kind": "digest", "message": "*Lifecycle digest, 21 Dec*\n*Next 14 days*\n• nobody\n*Stuck*\n• nothing overdue 🎉\n*Guides to review (stale)*\n• Leave policy (People Ops): last reviewed 15 months ago\n• Laptop and equipment policy (People Ops): last reviewed 26 months ago\n• Expense and reimbursement guide (Finance): last reviewed 7 months ago\n• Leaver checklist (People Ops): never reviewed\n• Benefits and perks FAQ (People Ops): last reviewed 9 months ago\n• Security and tools access guide (IT): last reviewed 6 months ago\n*Questions with no guide this week:* 0", "task_id": ""}], "cases": [{"id": "J-ES-01", "name": "Demo joiner (Spain)", "label": "Demo joiner (Spain)"}, {"id": "L-BR-01", "name": "Demo leaver (Brazil)", "label": "Demo leaver (Brazil)"}, {"id": "T-FAKE-01", "name": "TEST fake joiner (happy path)", "label": "Test: fake joiner (happy path)"}, {"id": "T-KE-01", "name": "TEST contractor in new country (Kenya)", "label": "Test: contractor in new country (Kenya)"}, {"id": "T-US-01", "name": "TEST short-notice leaver (no shared logins listed)", "label": "Test: short-notice leaver (no shared logins listed)"}], "steps": [{"step_id": "J01", "flow": "joiner", "offset_days": "-14", "step": "Send agreement (country template)", "owner_role": "Hiring coordinator", "human_moment": "N", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "Y", "nudge_text": "Send {name}'s {worker_type} agreement for {country} today. Template: {template}. Start date in the agreement must be {day0}."}, {"step_id": "J02", "flow": "joiner", "offset_days": "-10", "step": "Agreement signed", "owner_role": "Candidate", "human_moment": "N", "critical": "Y", "sensitive": "N", "recheck_if_date_moves": "Y", "nudge_text": "{name} hasn't signed yet. Chase by email today; agreement must be signed before accounts are created."}, {"step_id": "J03", "flow": "joiner", "offset_days": "-7", "step": "Collect payment details in payments platform", "owner_role": "People Ops", "human_moment": "N", "critical": "N", "sensitive": "Y", "recheck_if_date_moves": "N", "nudge_text": "Collect {name}'s payment details in the payments platform. Keep this out of public channels."}, {"step_id": "J04", "flow": "joiner", "offset_days": "-7", "step": "Order laptop (deliver 2 days before start)", "owner_role": "People Ops", "human_moment": "N", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "Y", "nudge_text": "Order {name}'s laptop for delivery by {deliver_by} ({country}). If the start date moves, update the order."}, {"step_id": "J05", "flow": "joiner", "offset_days": "-3", "step": "Create Google Workspace, Slack and Notion accounts", "owner_role": "IT", "human_moment": "N", "critical": "Y", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Create {name}'s Google Workspace, Slack and Notion accounts. Start date {day0}."}, {"step_id": "J06", "flow": "joiner", "offset_days": "-3", "step": "Assign security training", "owner_role": "IT", "human_moment": "N", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Assign security training to {name} so it's ready on day 0."}, {"step_id": "J07", "flow": "joiner", "offset_days": "-1", "step": "Write a personal welcome message", "owner_role": "Lead", "human_moment": "Y", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "Y", "nudge_text": "{name} starts tomorrow. Please write them a personal welcome. This one is yours, no template."}, {"step_id": "J08", "flow": "joiner", "offset_days": "0", "step": "Buddy intro", "owner_role": "Buddy", "human_moment": "Y", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "{name} starts today. Say hello and book a 20-minute intro this week."}, {"step_id": "J09", "flow": "joiner", "offset_days": "0", "step": "Onboarding call", "owner_role": "People Ops", "human_moment": "Y", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Run {name}'s onboarding call today and add them to the cohort channel."}, {"step_id": "J10", "flow": "joiner", "offset_days": "5", "step": "Check who is stuck on tool onboarding", "owner_role": "People Ops", "human_moment": "N", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Day 5 for {name}: check tool onboarding is complete and nothing is blocked."}, {"step_id": "J11", "flow": "joiner", "offset_days": "7", "step": "Week 1 check-in", "owner_role": "Lead", "human_moment": "Y", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Week 1 check-in with {name} is due today."}, {"step_id": "J12", "flow": "joiner", "offset_days": "14", "step": "Week 2 check-in", "owner_role": "Buddy", "human_moment": "Y", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Week 2 buddy check-in with {name} is due today."}, {"step_id": "J13", "flow": "joiner", "offset_days": "30", "step": "Day 30 check-in", "owner_role": "Lead", "human_moment": "Y", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Day 30 check-in with {name} is due today."}, {"step_id": "J14", "flow": "joiner", "offset_days": "60", "step": "Graduation from onboarding programme", "owner_role": "People Ops", "human_moment": "N", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "{name} reaches day 60 today. Confirm graduation and close the onboarding record."}, {"step_id": "L01", "flow": "leaver", "offset_days": "-7", "step": "Book exit call", "owner_role": "People Ops", "human_moment": "Y", "critical": "N", "sensitive": "Y", "recheck_if_date_moves": "N", "nudge_text": "Book an exit call with {name} (last day {day0}). This stays a human conversation."}, {"step_id": "L02", "flow": "leaver", "offset_days": "-7", "step": "Name handover owner", "owner_role": "Lead", "human_moment": "N", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Name who takes over {name}'s work and share the handover doc."}, {"step_id": "L03", "flow": "leaver", "offset_days": "-3", "step": "Prepare asset and access list incl. shared logins", "owner_role": "IT", "human_moment": "N", "critical": "Y", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Prepare {name}'s asset and access list. Shared logins on record: {shared_logins}."}, {"step_id": "L04", "flow": "leaver", "offset_days": "-1", "step": "Rotate shared passwords and transfer file ownership", "owner_role": "IT", "human_moment": "N", "critical": "Y", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Rotate shared passwords ({shared_logins}) and move ownership of {name}'s Drive and Notion files to the handover owner."}, {"step_id": "L05", "flow": "leaver", "offset_days": "0", "step": "Remove access (Slack, email, Notion, tools) by end of day", "owner_role": "IT", "human_moment": "N", "critical": "Y", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Today is {name}'s last day. Remove Slack, Google, Notion and tool access by end of day and mark done."}, {"step_id": "L06", "flow": "leaver", "offset_days": "0", "step": "Calculate final payment", "owner_role": "People Ops", "human_moment": "N", "critical": "Y", "sensitive": "Y", "recheck_if_date_moves": "N", "nudge_text": "Calculate {name}'s final payment. Confidential: do not discuss in public channels."}, {"step_id": "L07", "flow": "leaver", "offset_days": "1", "step": "Send exit survey", "owner_role": "People Ops", "human_moment": "N", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Send {name} the exit survey (personal email)."}, {"step_id": "L08", "flow": "leaver", "offset_days": "4", "step": "Follow up on exit survey if no reply", "owner_role": "People Ops", "human_moment": "N", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "No exit survey reply from {name} yet? Send one friendly follow-up, then close."}, {"step_id": "L09", "flow": "leaver", "offset_days": "7", "step": "Confirm laptop returned", "owner_role": "People Ops", "human_moment": "N", "critical": "N", "sensitive": "N", "recheck_if_date_moves": "N", "nudge_text": "Confirm {name}'s laptop has been returned or collected."}], "guides": [{"guide_id": "G-LEAVE", "title": "Leave policy", "owner_role": "People Ops", "last_updated": "2025-09-16", "where": "Google Doc", "link": "https://example.com/leave-policy", "asks_per_month": "38"}, {"guide_id": "G-LAPTOP", "title": "Laptop and equipment policy", "owner_role": "People Ops", "last_updated": "2024-11-16", "where": "Notion page", "link": "https://example.com/laptop-policy", "asks_per_month": "24"}, {"guide_id": "G-EXPENSE", "title": "Expense and reimbursement guide", "owner_role": "Finance", "last_updated": "2026-05-16", "where": "PDF in Drive", "link": "https://example.com/expense-guide", "asks_per_month": "31"}, {"guide_id": "G-JOINER", "title": "New joiner checklist", "owner_role": "People Ops", "last_updated": "2026-08-16", "where": "Notion page", "link": "https://example.com/joiner-checklist", "asks_per_month": "12"}, {"guide_id": "G-LEAVER", "title": "Leaver checklist", "owner_role": "People Ops", "last_updated": "", "where": "Spreadsheet", "link": "https://example.com/leaver-checklist", "asks_per_month": "4"}, {"guide_id": "G-PAYROLL", "title": "Payroll calendar", "owner_role": "Finance", "last_updated": "2026-10-16", "where": "Google Sheet", "link": "https://example.com/payroll-calendar", "asks_per_month": "45"}, {"guide_id": "G-BENEFITS", "title": "Benefits and perks FAQ", "owner_role": "People Ops", "last_updated": "2026-03-16", "where": "Notion page", "link": "https://example.com/benefits-faq", "asks_per_month": "19"}, {"guide_id": "G-SECURITY", "title": "Security and tools access guide", "owner_role": "IT", "last_updated": "2026-06-16", "where": "Notion page", "link": "https://example.com/security-guide", "asks_per_month": "16"}], "intents": [{"intent_id": "I-LEAVE", "keywords": "leave|time off|vacation|pto|holiday request|sick day", "guide_id": "G-LEAVE", "answer": "Request leave in the leave tool. Country rules{country_note} are in the Leave policy.", "action": "", "sensitive": "N", "sample_question": "how do i apply for leave in brazil?"}, {"intent_id": "I-LAPTOP", "keywords": "laptop|equipment|monitor|hardware", "guide_id": "G-LAPTOP", "answer": "Choose from the approved list in the Laptop policy. People Ops approves, IT ships.", "action": "", "sensitive": "N", "sample_question": "which laptop can I order and who approves?"}, {"intent_id": "I-PAY", "keywords": "paid|payroll|pay date|payment|salary", "guide_id": "G-PAYROLL", "answer": "This month's contractor pay dates are in the Payroll calendar. For questions about your own payment, DM Finance (not a public channel).", "action": "", "sensitive": "Y", "sample_question": "when do contractors get paid this month?"}, {"intent_id": "I-START", "keywords": "i start|first day|start monday|what do i do first|onboarding", "guide_id": "G-JOINER", "answer": "Welcome! Your first-week steps are in the New joiner checklist. Your lead and buddy will reach out on day 0.", "action": "my_checklist", "sensitive": "N", "sample_question": "I start Monday, what do I do first?"}, {"intent_id": "I-EXPENSE", "keywords": "expense|reimburse|reimbursement|coworking|receipt", "guide_id": "G-EXPENSE", "answer": "Check eligibility and limits in the Expense guide, then submit with your receipt.", "action": "", "sensitive": "N", "sample_question": "can I expense a coworking space?"}, {"intent_id": "I-INVOICE", "keywords": "invoice|invoices|billing", "guide_id": "", "answer": "There's no invoice guide yet. Finance owns this, so I've sent your question to them.", "action": "route_finance", "sensitive": "Y", "sample_question": "who do I ask about my invoice?"}, {"intent_id": "I-LEAVING", "keywords": "last day|leaving|resign|resignation|offboarding|notice period|my access", "guide_id": "G-LEAVER", "answer": "On your last day, Slack, email, Notion and tool access is removed by end of day. Before that you'll get a handover and an exit call. People Ops has been told so they can confirm dates with you.", "action": "notify_leaver", "sensitive": "Y", "sample_question": "last day is Friday, what happens to my access?"}, {"intent_id": "I-HOLIDAY", "keywords": "holiday calendar|public holiday|public holidays|bank holiday", "guide_id": "", "answer": "There's no holiday calendar guide yet; People Ops has been asked to publish one. Meanwhile, see the Leave policy.", "action": "route_people_ops", "sensitive": "N", "sample_question": "where is the holiday calendar?"}, {"intent_id": "I-SECURITY", "keywords": "password|2fa|locked out|security training|tool access", "guide_id": "G-SECURITY", "answer": "Steps for passwords, 2FA and tool access are in the Security and tools access guide.", "action": "", "sensitive": "N", "sample_question": "I'm locked out of Notion"}, {"intent_id": "I-BENEFITS", "keywords": "benefits|perks|insurance|stipend|wellness", "guide_id": "G-BENEFITS", "answer": "Everything about benefits and perks is in the Benefits FAQ.", "action": "", "sensitive": "N", "sample_question": "do we have a wellness stipend?"}], "tests": [{"test_id": "T1", "scenario": "Fake joiner: happy path", "person_id": "T-FAKE-01", "setup": "India contractor, day 0 = 30 Nov. Run 'Sync tasks', then 'Simulate' from 16 Nov.", "expected_result": "14 steps created with correct dates. Each owner gets one nudge on the due date. Welcome, buddy intro and check-ins are flagged as human moments. No escalations.", "result": ""}, {"test_id": "T2", "scenario": "Edge case 1: start date moves", "person_id": "J-ES-01", "setup": "Spain contractor. Flow starts with day 0 = 27 Oct; on 21 Oct day 0 changes to 3 Nov (after the laptop was ordered).", "expected_result": "All open steps re-dated. Agreement, laptop order and welcome reopen to recheck (start date in contract, delivery date). One 'date moved' post in the People Ops channel.", "result": ""}, {"test_id": "T3", "scenario": "Edge case 2: contractor in a new country", "person_id": "T-KE-01", "setup": "Kenya contractor, no agreement template on file.", "expected_result": "Flow starts, and a red flag is posted at once: 'No agreement template for contractor in Kenya; a human checks local rules first.' The agreement nudge shows 'MISSING for Kenya' rather than sending the wrong template.", "result": ""}, {"test_id": "T4", "scenario": "Edge case 3: leaver with shared accounts", "person_id": "L-BR-01", "setup": "Brazil employee, last day 14 Nov, 3 shared logins listed.", "expected_result": "Shared logins appear in the access-list (day -3) and rotate-passwords (day -1) nudges. Access removal is critical: 1 day late escalates straight to People Ops lead and the leaver's lead. Final payment is handled by DM only; escalation hides the detail.", "result": ""}, {"test_id": "T5", "scenario": "Extra: short-notice leaver with no shared logins listed", "person_id": "T-US-01", "setup": "Added to the sheet with fewer than 7 days to go; shared_logins blank.", "expected_result": "Steps already in the past are pulled to today (no flood of 'overdue'). A flag asks the lead to confirm shared logins.", "result": ""}]};
+const TODAY = new Date().toISOString().slice(0, 10);
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function mrkdwn(s) {
+  return esc(s)
+    .replace(/&lt;(https?:[^|]+)\|([^&]+)&gt;/g, '<a href="$1" target="_blank" rel="noopener">$2</a>')
+    .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+    .replace(/(^|\s)_([^_\n]+)_/g, '$1<em>$2</em>')
+    .replace(/\n/g, '<br>');
+}
+
+// Ask box
+const chips = document.getElementById('chips');
+DATA.intents.filter(i => i.sample_question).forEach(i => {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = i.sample_question;
+  b.onclick = () => { document.getElementById('q').value = i.sample_question; ask(); };
+  chips.appendChild(b);
+});
+function ask() {
+  const q = document.getElementById('q').value.trim(); if (!q) return;
+  const r = Core.matchQuestion(q, DATA.intents, DATA.guides, TODAY, 180);
+  const box = document.getElementById('answer');
+  const actions = { my_checklist: 'Shows your personal day-by-day checklist in Slack.',
+    notify_leaver: 'Starts a pending leaver request; People Ops confirms dates with you privately.',
+    route_finance: 'Your question is sent to Finance.', route_people_ops: 'Logged as a gap; People Ops follows up.' };
+  box.className = 'answer' + (r.matched === 'GAP' || !r.guide ? ' gap' : '');
+  box.innerHTML = mrkdwn(r.text) + (r.action && actions[r.action] ? '<div class="meta">⚙️ ' + actions[r.action] + '</div>' : '');
+  box.style.display = 'block';
+}
+document.getElementById('askForm').addEventListener('submit', e => { e.preventDefault(); ask(); });
+
+// Simulated Slack feed
+const NAMES = { U_HIRING: 'Hiring coordinator', U_PEOPLEOPS: 'People Ops', U_PEOPLEOPS_LEAD: 'People Ops lead',
+  C_PEOPLEOPS_PRIVATE: '#people-ops-private', U_LEAD_MKT: 'Lead, Marketing', U_LEAD_SALES: 'Lead, Sales',
+  U_LEAD_OPS: 'Lead, Operations', U_IT: 'IT', U_BUDDY_1: 'Buddy', U_BUDDY_2: 'Buddy', U_FINANCE: 'Finance' };
+const KIND = { nudge: 'nudge', overdue: 'overdue', escalation_1: 'escalation 1', escalation_2: 'escalation 2', flag: 'flag',
+  date_moved: 'date moved', digest: 'daily digest', flow_started: 'flow started' };
+const who = document.getElementById('who');
+DATA.cases.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.label; who.appendChild(o); });
+const allDays = [...new Set(DATA.sim.map(m => m.date))].sort();
+const slider = document.getElementById('day'); slider.max = allDays.length - 1;
+let timer = null;
+function caseMsgs() {
+  const id = who.value; if (!id) return DATA.sim;
+  const c = DATA.cases.find(x => x.id === id);
+  return DATA.sim.filter(m => m.kind !== 'digest' && ((m.task_id || '').startsWith(id + '-') || m.message.includes(c.name)));
+}
+function prettyDate(d) { return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }); }
+function drawFeed() {
+  const until = allDays[slider.value]; document.getElementById('dayLabel').textContent = prettyDate(until);
+  const msgs = caseMsgs().filter(m => m.date <= until);
+  const feed = document.getElementById('feed');
+  if (!msgs.length) { feed.innerHTML = '<div class="empty">No messages yet. Press play.</div>'; return; }
+  let last = '', html = '';
+  msgs.forEach(m => {
+    if (m.date !== last) { html += '<div class="daysep">' + prettyDate(m.date) + '</div>'; last = m.date; }
+    const to = NAMES[m.to] || m.to; const ch = m.to.startsWith('C_');
+    html += '<div class="msg"><div class="av">P</div><div><div class="who">people-ops bot <span>→ ' + esc(ch ? to : 'DM to ' + to) + '</span>' +
+      '<span class="k k-' + m.kind + '">' + (KIND[m.kind] || m.kind) + '</span></div><div class="txt">' + mrkdwn(m.message) + '</div>' +
+      ((m.kind === 'nudge' || m.kind === 'overdue') ? '<span class="fakebtn">Mark done ✅</span>' : '') + '</div></div>';
+  });
+  feed.innerHTML = html; feed.scrollTop = feed.scrollHeight;
+}
+function stop() { clearInterval(timer); timer = null; document.getElementById('play').textContent = '▶ Play'; }
+document.getElementById('play').onclick = () => {
+  if (timer) return stop();
+  if (+slider.value >= allDays.length - 1) slider.value = 0;
+  document.getElementById('play').textContent = '❚❚ Pause';
+  timer = setInterval(() => { if (+slider.value >= allDays.length - 1) return stop(); slider.value = +slider.value + 1; drawFeed(); }, 450);
+};
+slider.oninput = () => { stop(); drawFeed(); };
+document.getElementById('showAll').onclick = () => { stop(); slider.value = allDays.length - 1; drawFeed(); };
+who.onchange = () => { stop(); slider.value = allDays.length - 1; drawFeed(); };
+slider.value = allDays.length - 1; drawFeed();
+
+// Timeline
+const cases = {
+  joiner: 'Example: a contractor in Spain starting Monday 3 Nov (moved from 27 Oct).',
+  leaver: 'Example: an employee in Brazil whose last day is Friday 14 Nov, with shared logins.'
+};
+function dayLabel(n) { n = Number(n); return n === 0 ? 'Day 0' : (n > 0 ? '+' + n : String(n)); }
+function render(flow) {
+  document.getElementById('caseLine').textContent = cases[flow];
+  const v = flow === 'joiner'
+    ? { name: 'Alex', worker_type: 'contractor', country: 'Spain', day0: '3 Nov', template: 'Spain contractor template', deliver_by: '1 Nov', shared_logins: '', lead: 'the lead' }
+    : { name: 'Sam', worker_type: 'employee', country: 'Brazil', day0: '14 Nov', template: '', deliver_by: '', shared_logins: 'Canva team login, Ads manager, shared vault', lead: 'the lead' };
+  const fill = t => t.replace(/\{(\w+)\}/g, (m, k) => v[k] || m);
+  document.getElementById('timeline').innerHTML = DATA.steps.filter(s => s.flow === flow).map(s => {
+    const h = s.human_moment === 'Y', c = s.critical === 'Y', z = s.sensitive === 'Y', r = s.recheck_if_date_moves === 'Y';
+    return '<li class="' + (h ? 'human ' : '') + (c ? 'crit' : '') + '"><div class="day">' + dayLabel(s.offset_days) + '</div><span class="dot"></span>' +
+      '<div class="step"><b>' + esc(s.step) + '</b><span class="owner">Owner: ' + esc(s.owner_role === 'Candidate' ? 'Candidate (People Ops chases by email)' : s.owner_role) + '</span>' +
+      '<div class="nudge">🔔 ' + esc(fill(s.nudge_text)) + '</div>' +
+      (h ? '<span class="badge b-human">Human moment</span>' : '') + (c ? '<span class="badge b-crit">Critical: escalates in 1 day</span>' : '') +
+      (z ? '<span class="badge b-sens">Confidential: DM only</span>' : '') + (r ? '<span class="badge b-recheck">Rechecked if day 0 moves</span>' : '') +
+      '</div></li>';
+  }).join('');
+}
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); render(b.dataset.flow);
+});
+render('joiner');
+
+// Guides
+document.getElementById('guideRows').innerHTML = DATA.guides.map(g => {
+  const age = g.last_updated ? Core.diffDays(TODAY, g.last_updated) : null;
+  const badge = age === null ? '<span class="badge b-crit">Never reviewed</span>'
+    : age > 180 ? '<span class="badge b-human">Review due · ' + Math.round(age / 30) + ' months</span>'
+    : '<span class="badge b-ok">Current</span>';
+  return '<tr><td><a href="' + esc(g.link) + '" target="_blank" rel="noopener">' + esc(g.title) + '</a></td><td>' + esc(g.owner_role) + '</td><td>' + esc(g.where) +
+    '</td><td class="num">' + esc(g.asks_per_month) + '</td><td>' + badge + '</td></tr>';
+}).join('');
+
+// Tests
+document.getElementById('testRows').innerHTML = DATA.tests.map(t =>
+  '<tr><td><strong>' + esc(t.scenario) + '</strong></td><td>' + esc(t.setup) + '</td><td>' + esc(t.expected_result) + '</td></tr>').join('');
+</script>
+</body>
+</html>
