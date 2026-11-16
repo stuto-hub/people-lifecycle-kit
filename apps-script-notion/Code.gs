@@ -251,7 +251,7 @@ var Core = (function () {
 
 if (typeof module !== 'undefined') module.exports = Core; // for local tests only
 
-// ===== Engine.gs (Notion -> Slack) =====
+// ===== Engine.gs (Notion -> Slack, chat via Claude) =====
 /**
  * People Ops lifecycle bot: Notion (system of record) -> Slack (nudges, escalations, /people).
  * Runs on Google Apps Script, free. Logic for /people matching lives in Core.gs.
@@ -259,6 +259,7 @@ if (typeof module !== 'undefined') module.exports = Core; // for local tests onl
  * Script properties (Project Settings > Script properties), pasted by a human:
  *   NOTION_TOKEN     secret of the Notion connection "People Ops Bot"
  *   SLACK_BOT_TOKEN  xoxb-... from the Slack app (OAuth & Permissions)
+ *   ANTHROPIC_API_KEY  from console.anthropic.com (powers chat answers; optional)
  */
 const CONFIG = {
   TZ: 'Asia/Kolkata',
@@ -277,7 +278,8 @@ const CONFIG = {
   FALLBACK_USER: 'U0AGY9M1J8M',    // used when a Lead/Buddy ID in Notion is a placeholder
   TEMPLATES: ['Spain|Contractor', 'Brazil|Employee', 'India|Contractor', 'United States|Contractor'],
   HUB_URL: 'https://app.notion.com/p/People-Ops-Hub-41ad2f02b3a680a2a2ece93b6eee8ec5',
-  NEEDS_ACTION_URL: 'https://app.notion.com/p/41ad2f02b3a6809595bbe87a1cd78f5c'
+  NEEDS_ACTION_URL: 'https://app.notion.com/p/41ad2f02b3a6809595bbe87a1cd78f5c',
+  CLAUDE_MODEL: 'claude-haiku-5-5'      // fastest; switch to 'claude-sonnet-5-5' for richer answers
 };
 
 // ---------------- helpers ----------------
@@ -469,33 +471,114 @@ function setup() {
   ScriptApp.newTrigger('dailyRun').timeBased().everyDays(1).atHour(9).inTimezone(CONFIG.TZ).create();
 }
 
-// ---------------- Slack -> Apps Script: /people and the Mark done button ----------------
+// ---------------- Slack -> Apps Script: chat, /people and the Mark done button ----------------
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+const OK_ = () => ContentService.createTextOutput('');
 
 function doPost(e) {
+  // 1. Slack Events API (DMs to the bot, @mentions): JSON body
+  if (e && e.postData && /json/.test(e.postData.type || '')) return handleEvent_(JSON.parse(e.postData.contents || '{}'));
   const p = (e && e.parameter) || {};
-  if (p.payload) {                                   // button click
+  // 2. Button clicks
+  if (p.payload) {
     const payload = JSON.parse(p.payload); const a = (payload.actions || [])[0];
     if (a && a.action_id === 'mark_done') {
       notion_('patch', '/pages/' + a.value, { properties: { 'Status': { select: { name: 'Done' } } } });
       UrlFetchApp.fetch(payload.response_url, { method: 'post', contentType: 'application/json',
         payload: JSON.stringify({ replace_original: true, text: '✅ Marked done in Notion by <@' + payload.user.id + '>' }) });
     }
-    return ContentService.createTextOutput('');
+    return OK_();
   }
-  const today = todayIso_();
-  const kb = knowledge_();
-  const r = Core.matchQuestion(p.text, kb.intents, kb.guides, today, 180);
-  let reply = r.text;
+  // 3. /people slash command: fast, rule-based answer (Slack allows 3 seconds)
+  const r = Core.matchQuestion(p.text, knowledge_().intents, knowledge_().guides, todayIso_(), 180);
+  routeActions_(r, p.user_id, p.text, '/people');
+  return json_({ response_type: 'ephemeral', text: r.text + '\n_Tip: DM me for a fuller answer._' });
+}
+
+/** Side effects shared by /people and chat: humans stay in charge of anything that changes a record. */
+function routeActions_(r, user, text, via) {
   if (r.action === 'notify_leaver') {
     notion_('post', '/pages', { parent: { database_id: CONFIG.DB.people }, properties: {
-      'Name': { title: T('Leaver request from Slack user ' + p.user_id) }, 'Flow': { select: { name: 'Leaver' } },
-      'Status': { select: { name: 'Pending confirmation' } }, 'Notes': { rich_text: T('Asked via /people: "' + p.text + '". People Ops confirms dates, then sets Status to Active.') } } });
-    send_({ to: CONFIG.CHANNEL, kind: 'request', text: '📨 <@' + p.user_id + '> asked about their last day via /people. A pending leaver row was added in Notion. Reach out privately and confirm dates before setting it to Active.' });
+      'Name': { title: T('Leaver request from Slack user ' + user) }, 'Flow': { select: { name: 'Leaver' } },
+      'Status': { select: { name: 'Pending confirmation' } }, 'Notes': { rich_text: T('Asked via ' + via + ': "' + text + '". People Ops confirms dates, then sets Status to Active.') } } });
+    send_({ to: CONFIG.CHANNEL, kind: 'request', text: '📨 <@' + user + '> asked about their last day via ' + via + '. A pending leaver row was added in Notion. Reach out privately and confirm dates before setting it to Active.' });
   }
-  if (r.action === 'route_finance') send_({ to: CONFIG.ROLES.Finance, kind: 'question', text: '❓ Question from <@' + p.user_id + '> via /people: "' + p.text + '" (no guide yet).' });
-  if (r.action === 'route_people_ops' || r.matched === 'GAP') send_({ to: CONFIG.CHANNEL, kind: 'question', text: '❓ Unanswered /people question from <@' + p.user_id + '>: "' + p.text + '" (logged as a guide gap).' });
-  return json_({ response_type: 'ephemeral', text: reply });
+  if (r.action === 'route_finance') send_({ to: CONFIG.ROLES.Finance, kind: 'question', text: '❓ Question from <@' + user + '> via ' + via + ': "' + text + '" (no guide yet).' });
+  if (r.action === 'route_people_ops' || r.matched === 'GAP') send_({ to: CONFIG.CHANNEL, kind: 'question', text: '❓ Unanswered question from <@' + user + '> via ' + via + ': "' + text + '" (logged as a guide gap).' });
+}
+
+/** DM the bot (or @mention it) and Claude answers from the People Ops knowledge in Notion. */
+function handleEvent_(body) {
+  if (body.type === 'url_verification') return ContentService.createTextOutput(body.challenge);
+  if (body.type !== 'event_callback') return OK_();
+  const ev = body.event || {};
+  if (ev.bot_id || ev.subtype || !ev.text) return OK_();                       // ignore bots (incl. itself) and edits
+  if (!(ev.type === 'app_mention' || (ev.type === 'message' && ev.channel_type === 'im'))) return OK_();
+  // Slack retries if we take longer than 3 seconds; answer each event only once.
+  const cache = CacheService.getScriptCache(); const key = 'ev_' + body.event_id;
+  if (cache.get(key)) return OK_();
+  cache.put(key, '1', 21600);
+  const question = ev.text.replace(/<@[A-Z0-9]+>/g, '').trim();
+  const thread = ev.type === 'app_mention' ? (ev.thread_ts || ev.ts) : ev.thread_ts;
+  let answer;
+  try {
+    const kb = knowledge_();
+    const r = Core.matchQuestion(question, kb.intents, kb.guides, todayIso_(), 180);
+    answer = askClaude_(question, kb, r);
+    routeActions_(r, ev.user, question, ev.type === 'app_mention' ? 'an @mention' : 'a DM to the bot');
+  } catch (err) {
+    console.error(err);
+    answer = 'Sorry, I hit a problem answering that. People Ops has been told. You can also check the People Ops Hub: ' + CONFIG.HUB_URL;
+    send_({ to: CONFIG.CHANNEL, kind: 'error', text: '❌ Chat answer failed for <@' + ev.user + '>: ' + err.message });
+  }
+  postMessage_({ channel: ev.channel, text: answer, thread_ts: thread });
+  return OK_();
+}
+
+function postMessage_(body) {
+  UrlFetchApp.fetch('https://slack.com/api/chat.postMessage', { method: 'post', contentType: 'application/json; charset=utf-8',
+    muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + prop_('SLACK_BOT_TOKEN') }, payload: JSON.stringify(Object.assign({ unfurl_links: false }, body)) });
+}
+
+const SYSTEM_PROMPT_ = [
+  'You are People Ops Bot, the Slack assistant for a fully remote, mostly async company of about 150 people in 30+ countries.',
+  'Most people are contractors paid globally. You answer questions about policies, guides, forms, joining and leaving.',
+  'Rules:',
+  '- Answer ONLY from the KNOWLEDGE below. Never invent policy details, amounts, dates, eligibility or deadlines. If it is not covered, say so plainly and say People Ops has been told.',
+  '- Point to the right guide with its link as <url|Guide name> and name the owner team.',
+  '- If a guide is marked "review due" or "never reviewed", say it may be out of date and to confirm with the owner.',
+  '- Pay, invoices, health, legal, performance and leaving are confidential: keep it general, point to the owner, suggest a private DM, and never ask for personal details in Slack.',
+  '- You cannot see anyone\'s personal records and must not guess about other people.',
+  '- You inform; humans decide. Never promise approvals, pay or outcomes.',
+  '- Style: friendly, plain English, Slack formatting (*bold*, bullets), at most 6 short lines.'
+].join('\n');
+
+function askClaude_(question, kb, r) {
+  const key = prop_('ANTHROPIC_API_KEY');
+  if (!key) return r.text;                                                   // no Claude key yet: rule-based answer
+  const today = todayIso_();
+  const guides = kb.guides.map(g => {
+    const age = g.last_updated ? Core.diffDays(today, g.last_updated) : null;
+    const status = age === null ? 'never reviewed' : age > 180 ? 'review due (last reviewed ' + Math.round(age / 30) + ' months ago)' : 'current';
+    return '- ' + g.title + ' | owner: ' + g.owner_role + ' | ' + status + ' | link: ' + g.link;
+  }).join('\n');
+  const qa = kb.intents.map(i => '- Topic keywords: ' + i.keywords.replace(/\|/g, ', ') + ' | guide: ' + (i.guide_id || 'none yet') + ' | answer: ' + i.answer + (i.sensitive === 'Y' ? ' | confidential' : '')).join('\n');
+  const hint = r.matched === 'GAP' ? 'Best rule-based match: none (this is a gap).' : 'Best rule-based match: ' + r.text.replace(/\n/g, ' ');
+  const res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    payload: JSON.stringify({ model: CONFIG.CLAUDE_MODEL, max_tokens: 500,
+      system: SYSTEM_PROMPT_ + '\n\nKNOWLEDGE\nGuides:\n' + guides + '\nKnown questions:\n' + qa + '\n\n' + hint,
+      messages: [{ role: 'user', content: question }] }) });
+  const j = JSON.parse(res.getContentText() || '{}');
+  if (res.getResponseCode() >= 300) throw new Error('Claude API: ' + ((j.error && j.error.message) || res.getResponseCode()));
+  return (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || r.text;
+}
+
+/** Run from the editor to test the chat answer without Slack. */
+function testChat() {
+  const kb = knowledge_(); const q = 'can I expense my coworking space in Lisbon?';
+  console.log(askClaude_(q, kb, Core.matchQuestion(q, kb.intents, kb.guides, todayIso_(), 180)));
 }
 
 function knowledge_() {
