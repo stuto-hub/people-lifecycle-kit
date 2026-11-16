@@ -68,7 +68,7 @@ export async function history(ev) {
       : ev.channel_type === 'im' ? await slackGet('conversations.history', { channel: ev.channel, latest: ev.ts, limit: '8' })
       : null;
     if (!j || !j.ok) return [];
-    let msgs = (j.messages || []).filter(m => m.ts !== ev.ts && m.text && !m.text.startsWith('🧠'));
+    let msgs = (j.messages || []).filter(m => m.ts !== ev.ts && m.text && !m.text.startsWith('🧠') && !m.text.startsWith('Sorry, I hit a problem'));   // skip placeholders and error replies
     if (!ev.thread_ts) msgs = msgs.filter(m => Number(m.ts) > Number(ev.ts) - 3600).reverse();   // history is newest first
     return msgs.slice(-8).map(m => ({ role: m.bot_id ? 'assistant' : 'user', content: m.text.replace(/<@[A-Z0-9]+>/g, '').trim() }));
   } catch { return []; }
