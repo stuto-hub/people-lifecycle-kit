@@ -1,0 +1,17 @@
+{
+  "name": "people-ops-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Notion to Slack lifecycle bot: onboarding and offboarding nudges, escalations, and a Claude-powered People Ops assistant.",
+  "type": "module",
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "daily": "node scripts/daily.js daily",
+    "preview": "node scripts/daily.js preview",
+    "setup": "node scripts/daily.js setup",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@vercel/functions": ">=1.5.0"
+  }
+}
