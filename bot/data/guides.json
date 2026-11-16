@@ -1,0 +1,50 @@
+[
+ {
+  "Guide": "Leave policy",
+  "Owner": "People Ops",
+  "Last reviewed": "2025-09-16",
+  "Link": "https://example.com/leave-policy"
+ },
+ {
+  "Guide": "Laptop and equipment policy",
+  "Owner": "People Ops",
+  "Last reviewed": "2024-11-16",
+  "Link": "https://example.com/laptop-policy"
+ },
+ {
+  "Guide": "Expense and reimbursement guide",
+  "Owner": "Finance",
+  "Last reviewed": "2026-05-16",
+  "Link": "https://example.com/expense-guide"
+ },
+ {
+  "Guide": "New joiner checklist",
+  "Owner": "People Ops",
+  "Last reviewed": "2026-08-16",
+  "Link": "https://example.com/joiner-checklist"
+ },
+ {
+  "Guide": "Leaver checklist",
+  "Owner": "People Ops",
+  "Last reviewed": "",
+  "Link": "https://example.com/leaver-checklist"
+ },
+ {
+  "Guide": "Payroll calendar",
+  "Owner": "Finance",
+  "Last reviewed": "2026-10-16",
+  "Link": "https://example.com/payroll-calendar"
+ },
+ {
+  "Guide": "Benefits and perks FAQ",
+  "Owner": "People Ops",
+  "Last reviewed": "2026-03-16",
+  "Link": "https://example.com/benefits-faq"
+ },
+ {
+  "Guide": "Security and tools access guide",
+  "Owner": "IT",
+  "Last reviewed": "2026-06-16",
+  "Link": "https://example.com/security-guide"
+ }
+]

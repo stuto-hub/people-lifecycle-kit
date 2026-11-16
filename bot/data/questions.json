@@ -1,0 +1,82 @@
+[
+ {
+  "Question": "how do i apply for leave in brazil?",
+  "Guide": "Leave policy",
+  "Keywords": "leave, time off, vacation, pto, holiday request, sick day",
+  "Answer": "Request leave in the leave tool. Country rules are in the Leave policy.",
+  "Action": "Answer + link",
+  "Confidential": false
+ },
+ {
+  "Question": "which laptop can I order and who approves?",
+  "Guide": "Laptop and equipment policy",
+  "Keywords": "laptop, equipment, monitor, hardware",
+  "Answer": "Choose from the approved list in the Laptop policy. People Ops approves, IT ships.",
+  "Action": "Answer + link",
+  "Confidential": false
+ },
+ {
+  "Question": "when do contractors get paid this month?",
+  "Guide": "Payroll calendar",
+  "Keywords": "paid, payroll, pay date, payment, salary",
+  "Answer": "This month's contractor pay dates are in the Payroll calendar. For questions about your own payment, DM Finance (not a public channel).",
+  "Action": "Answer + link",
+  "Confidential": true
+ },
+ {
+  "Question": "I start Monday, what do I do first?",
+  "Guide": "New joiner checklist",
+  "Keywords": "i start, first day, start monday, what do i do first, onboarding",
+  "Answer": "Welcome! Your first-week steps are in the New joiner checklist. Your lead and buddy will reach out on day 0.",
+  "Action": "Answer + show personal checklist",
+  "Confidential": false
+ },
+ {
+  "Question": "can I expense a coworking space?",
+  "Guide": "Expense and reimbursement guide",
+  "Keywords": "expense, reimburse, reimbursement, coworking, receipt",
+  "Answer": "Check eligibility and limits in the Expense guide, then submit with your receipt.",
+  "Action": "Answer + link",
+  "Confidential": false
+ },
+ {
+  "Question": "who do I ask about my invoice?",
+  "Guide": "",
+  "Keywords": "invoice, invoices, billing",
+  "Answer": "There's no invoice guide yet. Finance owns this, so I've sent your question to them.",
+  "Action": "Route to Finance (no guide yet)",
+  "Confidential": true
+ },
+ {
+  "Question": "last day is Friday, what happens to my access?",
+  "Guide": "Leaver checklist",
+  "Keywords": "last day, leaving, resign, resignation, offboarding, notice period, my access",
+  "Answer": "On your last day, Slack, email, Notion and tool access is removed by end of day. Before that you'll get a handover and an exit call. People Ops has been told so they can confirm dates with you.",
+  "Action": "Answer + start leaver request (People Ops confirms)",
+  "Confidential": true
+ },
+ {
+  "Question": "where is the holiday calendar?",
+  "Guide": "",
+  "Keywords": "holiday calendar, public holiday, public holidays, bank holiday",
+  "Answer": "There's no holiday calendar guide yet; People Ops has been asked to publish one. Meanwhile, see the Leave policy.",
+  "Action": "Route to People Ops + log gap",
+  "Confidential": false
+ },
+ {
+  "Question": "I'm locked out of Notion",
+  "Guide": "Security and tools access guide",
+  "Keywords": "password, 2fa, locked out, security training, tool access",
+  "Answer": "Steps for passwords, 2FA and tool access are in the Security and tools access guide.",
+  "Action": "Answer + link",
+  "Confidential": false
+ },
+ {
+  "Question": "do we have a wellness stipend?",
+  "Guide": "Benefits and perks FAQ",
+  "Keywords": "benefits, perks, insurance, stipend, wellness",
+  "Answer": "Everything about benefits and perks is in the Benefits FAQ.",
+  "Action": "Answer + link",
+  "Confidential": false
+ }
+]
