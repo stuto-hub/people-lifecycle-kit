@@ -186,6 +186,7 @@ test('Chat: follow-up questions carry the earlier conversation', async () => {
   assert.deepEqual(msgs.map(m => m.role), ['user', 'assistant', 'user']);
   assert.equal(msgs[0].content, 'how do I apply for leave?');
   assert.equal(msgs[2].content, 'and in Spain?');
+  assert.ok(!f.calls.slack.some(m => /Unanswered question/.test(m.text)), 'a follow-up with context is not logged as a gap');
 });
 
 test('Chat: an @mention is answered in a thread; a question with no guide is logged as a gap', async () => {
