@@ -6,9 +6,9 @@ on:
   workflow_dispatch:            # "Run workflow" button in the Actions tab
     inputs:
       mode:
-        description: 'daily = nudges + digest, preview = print only, setup = one-time Notion column'
+        description: 'daily = nudges + digest, preview = print only (sends nothing)'
         type: choice
-        options: [daily, preview, setup]
+        options: [daily, preview]
         default: daily
       today:
         description: 'Optional: pretend today is YYYY-MM-DD (demos and tests)'
@@ -34,5 +34,4 @@ jobs:
         env:
           MODE: ${{ inputs.mode || 'daily' }}
           TODAY: ${{ inputs.today }}
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
