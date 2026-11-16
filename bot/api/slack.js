@@ -1,6 +1,6 @@
 /**
  * Vercel function: the one URL Slack calls (events, /people, buttons).
- * Slack wants an answer within 3 seconds, so slow work (Claude, Notion writes) runs
+ * Slack wants an answer within 3 seconds, so slow work (Claude, saving status) runs
  * after the reply via waitUntil, which keeps the function alive until it finishes.
  */
 import { verifySlack, respond } from '../lib/slack.js';
@@ -64,7 +64,7 @@ export async function POST(request) {
 export function GET() {
   const has = k => (process.env[k] ? '✅' : '❌');
   return new Response(['People Ops Bot is running.',
-    has('NOTION_TOKEN') + ' NOTION_TOKEN', has('SLACK_BOT_TOKEN') + ' SLACK_BOT_TOKEN',
-    has('SLACK_SIGNING_SECRET') + ' SLACK_SIGNING_SECRET', has('ANTHROPIC_API_KEY') + ' ANTHROPIC_API_KEY (optional)'].join('\n'),
+    has('SLACK_BOT_TOKEN') + ' SLACK_BOT_TOKEN',
+    has('SLACK_SIGNING_SECRET') + ' SLACK_SIGNING_SECRET', has('ANTHROPIC_API_KEY') + ' ANTHROPIC_API_KEY (optional)', has('GITHUB_TOKEN') + ' GITHUB_TOKEN (optional, saves Mark done)'].join('\n'),
     { headers: { 'content-type': 'text/plain; charset=utf-8' } });
 }
