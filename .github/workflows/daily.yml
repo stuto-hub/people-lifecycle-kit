@@ -1,0 +1,38 @@
+name: Daily lifecycle run
+
+on:
+  schedule:
+    - cron: '30 3 * * *'        # 03:30 UTC = 09:00 IST, every day
+  workflow_dispatch:            # "Run workflow" button in the Actions tab
+    inputs:
+      mode:
+        description: 'daily = nudges + digest, preview = print only, setup = one-time Notion column'
+        type: choice
+        options: [daily, preview, setup]
+        default: daily
+      today:
+        description: 'Optional: pretend today is YYYY-MM-DD (demos and tests)'
+        required: false
+        default: ''
+
+concurrency: lifecycle-run       # never two runs at once
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run the bot
+        run: node scripts/daily.js "$MODE"
+        env:
+          MODE: ${{ inputs.mode || 'daily' }}
+          TODAY: ${{ inputs.today }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

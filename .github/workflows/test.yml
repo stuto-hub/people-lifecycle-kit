@@ -1,0 +1,21 @@
+name: Tests
+
+on:
+  push:
+    paths: ['bot/**', '.github/workflows/**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test plan (fake joiner + edge cases, Notion/Slack/Claude faked)
+        run: node --test test/*.test.js
