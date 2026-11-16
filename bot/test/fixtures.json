@@ -1,0 +1,389 @@
+{
+ "steps": [
+  {
+   "Step": "Send agreement (country template)",
+   "Flow": "Joiner",
+   "Offset (days)": -14,
+   "Owner role": "Hiring coordinator",
+   "Human moment": false,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": true,
+   "Nudge text": "Send {name}'s {worker_type} agreement for {country} today. Template: {template}. Start date in the agreement must be {day0}."
+  },
+  {
+   "Step": "Agreement signed",
+   "Flow": "Joiner",
+   "Offset (days)": -10,
+   "Owner role": "Candidate",
+   "Human moment": false,
+   "Critical": true,
+   "Confidential": false,
+   "Recheck if day 0 moves": true,
+   "Nudge text": "{name} hasn't signed yet. Chase by email today; agreement must be signed before accounts are created."
+  },
+  {
+   "Step": "Collect payment details in payments platform",
+   "Flow": "Joiner",
+   "Offset (days)": -7,
+   "Owner role": "People Ops",
+   "Human moment": false,
+   "Critical": false,
+   "Confidential": true,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Collect {name}'s payment details in the payments platform. Keep this out of public channels."
+  },
+  {
+   "Step": "Order laptop (deliver 2 days before start)",
+   "Flow": "Joiner",
+   "Offset (days)": -7,
+   "Owner role": "People Ops",
+   "Human moment": false,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": true,
+   "Nudge text": "Order {name}'s laptop for delivery by {deliver_by} ({country}). If the start date moves, update the order."
+  },
+  {
+   "Step": "Create Google Workspace / Slack / Notion accounts",
+   "Flow": "Joiner",
+   "Offset (days)": -3,
+   "Owner role": "IT",
+   "Human moment": false,
+   "Critical": true,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Create {name}'s Google Workspace, Slack and Notion accounts. Start date {day0}."
+  },
+  {
+   "Step": "Assign security training",
+   "Flow": "Joiner",
+   "Offset (days)": -3,
+   "Owner role": "IT",
+   "Human moment": false,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Assign security training to {name} so it's ready on day 0."
+  },
+  {
+   "Step": "Write a personal welcome message",
+   "Flow": "Joiner",
+   "Offset (days)": -1,
+   "Owner role": "Lead",
+   "Human moment": true,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": true,
+   "Nudge text": "{name} starts tomorrow. Please write them a personal welcome. This one is yours, no template."
+  },
+  {
+   "Step": "Buddy intro",
+   "Flow": "Joiner",
+   "Offset (days)": 0,
+   "Owner role": "Buddy",
+   "Human moment": true,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "{name} starts today. Say hello and book a 20-minute intro this week."
+  },
+  {
+   "Step": "Onboarding call",
+   "Flow": "Joiner",
+   "Offset (days)": 0,
+   "Owner role": "People Ops",
+   "Human moment": true,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Run {name}'s onboarding call today and add them to the cohort channel."
+  },
+  {
+   "Step": "Check who is stuck on tool onboarding",
+   "Flow": "Joiner",
+   "Offset (days)": 5,
+   "Owner role": "People Ops",
+   "Human moment": false,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Day 5 for {name}: check tool onboarding is complete and nothing is blocked."
+  },
+  {
+   "Step": "Week 1 check-in",
+   "Flow": "Joiner",
+   "Offset (days)": 7,
+   "Owner role": "Lead",
+   "Human moment": true,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Week 1 check-in with {name} is due today."
+  },
+  {
+   "Step": "Week 2 check-in",
+   "Flow": "Joiner",
+   "Offset (days)": 14,
+   "Owner role": "Buddy",
+   "Human moment": true,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Week 2 buddy check-in with {name} is due today."
+  },
+  {
+   "Step": "Day 30 check-in",
+   "Flow": "Joiner",
+   "Offset (days)": 30,
+   "Owner role": "Lead",
+   "Human moment": true,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Day 30 check-in with {name} is due today."
+  },
+  {
+   "Step": "Graduation from onboarding programme",
+   "Flow": "Joiner",
+   "Offset (days)": 60,
+   "Owner role": "People Ops",
+   "Human moment": false,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "{name} reaches day 60 today. Confirm graduation and close the onboarding record."
+  },
+  {
+   "Step": "Book exit call",
+   "Flow": "Leaver",
+   "Offset (days)": -7,
+   "Owner role": "People Ops",
+   "Human moment": true,
+   "Critical": false,
+   "Confidential": true,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Book an exit call with {name} (last day {day0}). This stays a human conversation."
+  },
+  {
+   "Step": "Name handover owner",
+   "Flow": "Leaver",
+   "Offset (days)": -7,
+   "Owner role": "Lead",
+   "Human moment": false,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Name who takes over {name}'s work and share the handover doc."
+  },
+  {
+   "Step": "Prepare asset and access list incl. shared logins",
+   "Flow": "Leaver",
+   "Offset (days)": -3,
+   "Owner role": "IT",
+   "Human moment": false,
+   "Critical": true,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Prepare {name}'s asset and access list. Shared logins on record: {shared_logins}."
+  },
+  {
+   "Step": "Rotate shared passwords and transfer file ownership",
+   "Flow": "Leaver",
+   "Offset (days)": -1,
+   "Owner role": "IT",
+   "Human moment": false,
+   "Critical": true,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Rotate shared passwords ({shared_logins}) and move ownership of {name}'s Drive and Notion files to the handover owner."
+  },
+  {
+   "Step": "Remove access (Slack / email / Notion / tools) by end of day",
+   "Flow": "Leaver",
+   "Offset (days)": 0,
+   "Owner role": "IT",
+   "Human moment": false,
+   "Critical": true,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Today is {name}'s last day. Remove Slack, Google, Notion and tool access by end of day and mark done."
+  },
+  {
+   "Step": "Calculate final payment",
+   "Flow": "Leaver",
+   "Offset (days)": 0,
+   "Owner role": "People Ops",
+   "Human moment": false,
+   "Critical": true,
+   "Confidential": true,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Calculate {name}'s final payment. Confidential: do not discuss in public channels."
+  },
+  {
+   "Step": "Send exit survey",
+   "Flow": "Leaver",
+   "Offset (days)": 1,
+   "Owner role": "People Ops",
+   "Human moment": false,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Send {name} the exit survey (personal email)."
+  },
+  {
+   "Step": "Follow up on exit survey if no reply",
+   "Flow": "Leaver",
+   "Offset (days)": 4,
+   "Owner role": "People Ops",
+   "Human moment": false,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "No exit survey reply from {name} yet? Send one friendly follow-up, then close."
+  },
+  {
+   "Step": "Confirm laptop returned",
+   "Flow": "Leaver",
+   "Offset (days)": 7,
+   "Owner role": "People Ops",
+   "Human moment": false,
+   "Critical": false,
+   "Confidential": false,
+   "Recheck if day 0 moves": false,
+   "Nudge text": "Confirm {name}'s laptop has been returned or collected."
+  }
+ ],
+ "guides": [
+  {
+   "Guide": "Leave policy",
+   "Owner": "People Ops",
+   "Last reviewed": "2025-09-16",
+   "Link": "https://example.com/leave-policy"
+  },
+  {
+   "Guide": "Laptop and equipment policy",
+   "Owner": "People Ops",
+   "Last reviewed": "2024-11-16",
+   "Link": "https://example.com/laptop-policy"
+  },
+  {
+   "Guide": "Expense and reimbursement guide",
+   "Owner": "Finance",
+   "Last reviewed": "2026-05-16",
+   "Link": "https://example.com/expense-guide"
+  },
+  {
+   "Guide": "New joiner checklist",
+   "Owner": "People Ops",
+   "Last reviewed": "2026-08-16",
+   "Link": "https://example.com/joiner-checklist"
+  },
+  {
+   "Guide": "Leaver checklist",
+   "Owner": "People Ops",
+   "Last reviewed": "",
+   "Link": "https://example.com/leaver-checklist"
+  },
+  {
+   "Guide": "Payroll calendar",
+   "Owner": "Finance",
+   "Last reviewed": "2026-10-16",
+   "Link": "https://example.com/payroll-calendar"
+  },
+  {
+   "Guide": "Benefits and perks FAQ",
+   "Owner": "People Ops",
+   "Last reviewed": "2026-03-16",
+   "Link": "https://example.com/benefits-faq"
+  },
+  {
+   "Guide": "Security and tools access guide",
+   "Owner": "IT",
+   "Last reviewed": "2026-06-16",
+   "Link": "https://example.com/security-guide"
+  }
+ ],
+ "questions": [
+  {
+   "Question": "how do i apply for leave in brazil?",
+   "Guide": "Leave policy",
+   "Keywords": "leave, time off, vacation, pto, holiday request, sick day",
+   "Answer": "Request leave in the leave tool. Country rules are in the Leave policy.",
+   "Action": "Answer + link",
+   "Confidential": false
+  },
+  {
+   "Question": "which laptop can I order and who approves?",
+   "Guide": "Laptop and equipment policy",
+   "Keywords": "laptop, equipment, monitor, hardware",
+   "Answer": "Choose from the approved list in the Laptop policy. People Ops approves, IT ships.",
+   "Action": "Answer + link",
+   "Confidential": false
+  },
+  {
+   "Question": "when do contractors get paid this month?",
+   "Guide": "Payroll calendar",
+   "Keywords": "paid, payroll, pay date, payment, salary",
+   "Answer": "This month's contractor pay dates are in the Payroll calendar. For questions about your own payment, DM Finance (not a public channel).",
+   "Action": "Answer + link",
+   "Confidential": true
+  },
+  {
+   "Question": "I start Monday, what do I do first?",
+   "Guide": "New joiner checklist",
+   "Keywords": "i start, first day, start monday, what do i do first, onboarding",
+   "Answer": "Welcome! Your first-week steps are in the New joiner checklist. Your lead and buddy will reach out on day 0.",
+   "Action": "Answer + show personal checklist",
+   "Confidential": false
+  },
+  {
+   "Question": "can I expense a coworking space?",
+   "Guide": "Expense and reimbursement guide",
+   "Keywords": "expense, reimburse, reimbursement, coworking, receipt",
+   "Answer": "Check eligibility and limits in the Expense guide, then submit with your receipt.",
+   "Action": "Answer + link",
+   "Confidential": false
+  },
+  {
+   "Question": "who do I ask about my invoice?",
+   "Guide": "",
+   "Keywords": "invoice, invoices, billing",
+   "Answer": "There's no invoice guide yet. Finance owns this, so I've sent your question to them.",
+   "Action": "Route to Finance (no guide yet)",
+   "Confidential": true
+  },
+  {
+   "Question": "last day is Friday, what happens to my access?",
+   "Guide": "Leaver checklist",
+   "Keywords": "last day, leaving, resign, resignation, offboarding, notice period, my access",
+   "Answer": "On your last day, Slack, email, Notion and tool access is removed by end of day. Before that you'll get a handover and an exit call. People Ops has been told so they can confirm dates with you.",
+   "Action": "Answer + start leaver request (People Ops confirms)",
+   "Confidential": true
+  },
+  {
+   "Question": "where is the holiday calendar?",
+   "Guide": "",
+   "Keywords": "holiday calendar, public holiday, public holidays, bank holiday",
+   "Answer": "There's no holiday calendar guide yet; People Ops has been asked to publish one. Meanwhile, see the Leave policy.",
+   "Action": "Route to People Ops + log gap",
+   "Confidential": false
+  },
+  {
+   "Question": "I'm locked out of Notion",
+   "Guide": "Security and tools access guide",
+   "Keywords": "password, 2fa, locked out, security training, tool access",
+   "Answer": "Steps for passwords, 2FA and tool access are in the Security and tools access guide.",
+   "Action": "Answer + link",
+   "Confidential": false
+  },
+  {
+   "Question": "do we have a wellness stipend?",
+   "Guide": "Benefits and perks FAQ",
+   "Keywords": "benefits, perks, insurance, stipend, wellness",
+   "Answer": "Everything about benefits and perks is in the Benefits FAQ.",
+   "Action": "Answer + link",
+   "Confidential": false
+  }
+ ]
+}
