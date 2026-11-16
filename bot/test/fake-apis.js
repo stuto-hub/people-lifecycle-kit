@@ -23,10 +23,10 @@ const SCHEMA = {
 };
 const DB_NAME = Object.fromEntries(Object.entries(CONFIG.DB).map(([k, v]) => [v, k]));
 
-export function installFakes({ today, people = [], tasks = [], failSlackFor = [], claudeDown = false }) {
+export function installFakes({ today, people = [], tasks = [], failSlackFor = [], claudeDown = false, dmHistory = [] }) {
   let n = 0;
   const pages = [];
-  const calls = { slack: [], responses: [], notionWrites: [], claude: [] };
+  const calls = { slack: [], updates: [], responses: [], notionWrites: [], claude: [] };
   const add = (db, flat) => { const id = db + '-' + (++n); pages.push({ id, db, url: 'https://notion.test/' + id, p: { ...flat } }); return id; };
 
   fixtures.steps.forEach(s => add('steps', s));
@@ -107,8 +107,10 @@ export function installFakes({ today, people = [], tasks = [], failSlackFor = []
     }
     if (url === 'https://slack.com/api/chat.postMessage') {
       calls.slack.push(body);
-      return reply(failSlackFor.includes(body.channel) ? { ok: false, error: 'channel_not_found' } : { ok: true });
+      return reply(failSlackFor.includes(body.channel) ? { ok: false, error: 'channel_not_found' } : { ok: true, ts: '9' + calls.slack.length + '.0' });
     }
+    if (url === 'https://slack.com/api/chat.update') { calls.updates.push(body); return reply({ ok: true }); }
+    if (url.startsWith('https://slack.com/api/conversations.')) return reply({ ok: true, messages: dmHistory });
     if (url.startsWith('https://hooks.slack.test/')) { calls.responses.push(body); return reply({ ok: true }); }
     if (url === 'https://api.anthropic.com/v1/messages') {
       calls.claude.push(body);

@@ -161,17 +161,34 @@ test('Chat: a DM gets one Claude answer grounded in the Notion guides, even when
   assert.equal(f.calls.claude.length, 1);
   assert.match(f.calls.claude[0].system, /Answer ONLY from the KNOWLEDGE/);
   assert.match(f.calls.claude[0].system, /Leave policy \| owner: People Ops \| review due/);
-  assert.equal(f.calls.slack.length, 1);
+  assert.equal(f.calls.slack.length, 1, 'one "Thinking…" message, nothing else');
   assert.equal(f.calls.slack[0].channel, 'D0TEST');
-  assert.match(f.calls.slack[0].text, /Claude answer for: how do I apply for leave in Brazil\?/);
+  assert.match(f.calls.slack[0].text, /Thinking/);
+  assert.equal(f.calls.updates.length, 1, 'the Thinking message is replaced by the answer');
+  assert.match(f.calls.updates[0].text, /Claude answer for: how do I apply for leave in Brazil\?/);
+});
+
+test('Chat: follow-up questions carry the earlier conversation', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const f = installFakes({ today: '2026-11-16', dmHistory: [
+    { ts: String(now - 60), bot_id: 'B0BOT', text: 'Request leave in the leave tool. Country rules are in the Leave policy.' },
+    { ts: String(now - 90), user: 'U0ASKER01', text: 'how do I apply for leave?' },
+    { ts: String(now - 99999), user: 'U0ASKER01', text: 'an old unrelated question from yesterday' } ] });
+  await POST(slackRequest(dm('E12', 'and in Spain?', { ts: String(now) })));
+  await drain();
+  const msgs = f.calls.claude[0].messages;
+  assert.deepEqual(msgs.map(m => m.role), ['user', 'assistant', 'user']);
+  assert.equal(msgs[0].content, 'how do I apply for leave?');
+  assert.equal(msgs[2].content, 'and in Spain?');
 });
 
 test('Chat: an @mention is answered in a thread; a question with no guide is logged as a gap', async () => {
   const f = installFakes({ today: '2026-11-16' });
   await POST(slackRequest({ type: 'event_callback', event_id: 'E20', event: { type: 'app_mention', channel: 'C0GENERAL', user: 'U0ASKER01', text: '<@U0BOT> where is the holiday calendar?', ts: '5.5' } }));
   await drain();
-  const answer = f.calls.slack.find(m => m.channel === 'C0GENERAL');
-  assert.equal(answer.thread_ts, '5.5');
+  const thinking = f.calls.slack.find(m => m.channel === 'C0GENERAL');
+  assert.equal(thinking.thread_ts, '5.5', 'answered in a thread under the mention');
+  assert.equal(f.calls.updates[0].channel, 'C0GENERAL');
   assert.equal(f.calls.claude[0].messages[0].content, 'where is the holiday calendar?');
   assert.ok(f.calls.slack.some(m => m.channel === CONFIG.CHANNEL && /Unanswered question/.test(m.text)));
 });
@@ -180,7 +197,7 @@ test('Chat: if Claude is down the person still gets a reply and People Ops is to
   const f = installFakes({ today: '2026-11-16', claudeDown: true });
   await POST(slackRequest(dm('E30', 'can I expense a coworking space?')));
   await drain();
-  assert.match(f.calls.slack.find(m => m.channel === 'D0TEST').text, /Sorry, I hit a problem/);
+  assert.match(f.calls.updates[0].text, /Sorry, I hit a problem/);
   assert.ok(f.calls.slack.some(m => m.channel === CONFIG.CHANNEL && /Chat answer failed/.test(m.text)));
 });
 
