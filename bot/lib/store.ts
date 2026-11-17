@@ -11,7 +11,7 @@ import { addDays, diffDays } from './core.js';
 import { CONFIG, env, trackerUrl } from './config.js';
 import { toObjects, setCellInCsv } from './csv.js';
 import type { Data, Person, Row, Step, StepStatus, Task } from './types.js';
-import { sheetOn, tabCsv, setSheetCell } from './sheets.js';
+import { sheetOn, tabCsv, setSheetCell, appendRow, readTab } from './sheets.js';
 
 export const FILES = { Joiners: 'joiners.csv', Leavers: 'leavers.csv', Steps: 'steps.csv', Guides: 'guides.csv', Questions: 'questions.csv', Handbook: 'handbook.md', Reminders: 'reminders.csv', Tools: 'tools.csv' } as const;
 export type Tab = keyof typeof FILES;
@@ -212,4 +212,32 @@ export function percentDone(d: Data, p: Person): string {
   if (!mine.length) return '';
   const done = mine.filter(s => (d.status[p.id + '::' + s.id] || { Status: '' }).Status === 'Done').length;
   return Math.round(100 * done / mine.length) + '%';
+}
+
+/** Next free ID for a tab: J-105 after J-104. */
+export function nextId(d: Data, flow: 'Joiner' | 'Leaver'): string {
+  const prefix = flow === 'Joiner' ? 'J-' : 'L-';
+  const max = Math.max(flow === 'Joiner' ? 100 : 200, ...d.people.filter(p => p.Flow === flow).map(p => Number((p.id.match(/(\d+)/) || [])[1] || 0)));
+  return prefix + (max + 1);
+}
+
+/**
+ * Adds a new joiner / leaver row: the given fields, every step "Pending", Added on = today.
+ * Returns the new ID, or '' when no tracker can be written (no Sheet and not in tests).
+ */
+export async function addPerson(flow: 'Joiner' | 'Leaver', fields: Record<string, string>): Promise<string> {
+  const d = await load(); const id = nextId(d, flow);
+  const tab = flow === 'Joiner' ? 'Joiners' : 'Leavers';
+  const row: Record<string, string> = { ID: id, Status: 'Active', POC: 'People Ops', ...fields };
+  if (override) {                                          // tests: in-memory
+    const steps = override.steps.filter(s => s.Flow === flow);
+    const { person } = personFromRow({ ...row, ...Object.fromEntries(steps.map(s => [s.id + ' ' + s.Step, 'Pending'])) } as any, tab);
+    override.people.push(person);
+    return id;
+  }
+  if (!sheetOn()) return '';
+  const head = ((await readTab(tab)) || [[]])[0].map(h => String(h).trim());
+  await appendRow(tab, head.map(h => h in row ? row[h] : /^[JL]\d{2}\b/.test(h) ? 'Pending' : ''));
+  cache = null;
+  return id;
 }

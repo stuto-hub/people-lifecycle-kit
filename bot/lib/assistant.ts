@@ -8,7 +8,7 @@
 import { matchQuestion } from './core.js';
 import type { GuideRef, Intent, Match } from './core.js';
 import { CONFIG, env, todayIso } from './config.js';
-import { load, setCell, sheetLink, buildTasks, people as peopleOf, getRow, stepIdOf } from './store.js';
+import { load, setCell, sheetLink, buildTasks, people as peopleOf, getRow, stepIdOf, addPerson, nextId } from './store.js';
 import { onTrackerChange } from './tracker-events.js';
 import { sheetOn } from './sheets.js';
 import { pollSheet } from './sheet-sync.js';
@@ -168,6 +168,7 @@ export async function answerChat(ev: SlackEvent) {
   const thread_ts = ev.type === 'app_mention' ? (ev.thread_ts || ev.ts) : ev.thread_ts;
   const tagged = taggedPeople(ev);
   if (tagged.length) return assignTask(ev, tagged, thread_ts);
+  if (ADD_PERSON.test(question)) return previewAdd(ev, question, thread_ts);
   let dateAsk = DATE_CHANGE.test(question) ? question : '';
   if (!dateAsk && ev.thread_ts && parseDate(question, todayIso())) {      // "this is the new date 14/1/2026" in the same thread
     const earlier = (await history(ev)).filter(m => m.role === 'user').map(m => m.content).join(' ');
@@ -232,6 +233,7 @@ export async function buttonClick(payload: any) {
   const a = (payload.actions || [])[0];
   if (a && (a.action_id === 'task_done' || a.action_id === 'task_help')) return taskButton(payload, a);
   if (a && (a.action_id === 'date_confirm' || a.action_id === 'date_cancel')) return dateButton(payload, a);
+  if (a && (a.action_id === 'add_confirm' || a.action_id === 'add_cancel')) return addButton(payload, a);
   if (!a || a.action_id !== 'mark_done') return;
   const who = payload.user.id;
   const [personId, stepId] = String(a.value).split('::');
@@ -397,4 +399,70 @@ export function stepFor(text: string, steps: Step[]): Step | undefined {
     if (n > score) { best = st; score = n; }
   }
   return best;
+}
+
+// ---------------- "New joiner starting 1 Jan 2027, full time in India, add them to the sheet" ----------------
+const ADD_PERSON = { test: (q: string) => /\b(new (joiner|hire|starter|leaver|employee|contractor)|someone|a person)\b/i.test(q) &&
+  (/\b(add|put|create|enter|log)\b.*\b(sheet|tracker)\b/i.test(q) || (/\b(starting|starts|joining|is leaving|leaves on|last day is)\b/i.test(q) && /\d/.test(q) && !/\?\s*$/.test(q))) };
+const COUNTRIES = ['India', 'Brazil', 'Spain', 'Kenya', 'United States', 'USA', 'UK', 'United Kingdom', 'Germany', 'France', 'Mexico', 'Argentina', 'Colombia',
+  'Nigeria', 'South Africa', 'Philippines', 'Indonesia', 'Canada', 'Australia', 'Portugal', 'Poland', 'Netherlands', 'Italy', 'Egypt', 'Pakistan', 'Vietnam', 'Chile', 'Peru', 'Ireland', 'Singapore'];
+
+/** Pulls the fields out of the request; Claude finds the name if there is one, the rest is plain matching. */
+export async function parseNewPerson(text: string, today: string) {
+  const flow: 'Joiner' | 'Leaver' = /\b(leav|exit|resign|last day)/i.test(text) ? 'Leaver' : 'Joiner';
+  const country = COUNTRIES.find(c => new RegExp('\\b' + c + '\\b', 'i').test(text)) || '';
+  const worker = /\b(full[- ]?time|employee|fte|permanent)\b/i.test(text) ? 'Employee' : /\b(contract(or)?|freelanc|part[- ]?time)\w*/i.test(text) ? 'Contractor' : '';
+  const day0 = parseDate(text, today);
+  let name = (text.match(/\b(?:named|called|name is)\s+([A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)/) || [])[1] || '';
+  if (!name && env('ANTHROPIC_API_KEY')) {
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
+        headers: { 'x-api-key': env('ANTHROPIC_API_KEY'), 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({ model: CONFIG.CLAUDE_MODEL, max_tokens: 30, system: 'Return only the full name of the new person in the message, or NONE if no name is given. No other words.',
+          messages: [{ role: 'user', content: text.replace(/<@[^>]+>/g, '') }] }) });
+      const j: any = await res.json();
+      const t = ((j.content || [])[0]?.text || '').trim();
+      if (t && !/^none$/i.test(t) && t.length < 60) name = t;
+    } catch { /* keep the placeholder */ }
+  }
+  return { flow, country, worker, day0, name };
+}
+
+export async function previewAdd(ev: SlackEvent, text: string, thread_ts?: string) {
+  const today = todayIso();
+  const f = await parseNewPerson(text, today);
+  const missing = [!f.day0 && (f.flow === 'Joiner' ? 'start date' : 'last day'), !f.country && 'country'].filter(Boolean);
+  if (missing.length) return postMessage({ channel: ev.channel, thread_ts, text: '🤔 To add a new ' + f.flow.toLowerCase() + ' I need the ' + missing.join(' and ') +
+    '. Try: _New joiner Priya Shah starting 1 Jan 2027, full time in India, add them to the sheet_' });
+  const d = await load();
+  const name = f.name || 'New ' + f.flow.toLowerCase() + ' (' + f.country + ', ' + pretty(f.day0) + ')';
+  const id = nextId(d, f.flow);
+  const steps = d.steps.filter(s => s.Flow === f.flow);
+  const value = JSON.stringify({ ...f, name, r: ev.user });
+  const past = f.day0 < today ? '\n⚠️ ' + pretty(f.day0) + ' ' + f.day0.slice(0, 4) + ' is in the past.' : '';
+  const txt = '➕ Add a new *' + f.flow.toLowerCase() + '* to the tracker?\n• *' + name + '* (' + id + ')' + (f.name ? '' : ' _no name given: edit it in the Sheet later_') +
+    '\n• ' + (f.flow === 'Joiner' ? 'Starts' : 'Last day') + ': *' + pretty(f.day0) + ' ' + f.day0.slice(0, 4) + '*' + past + '\n• ' + f.country + ', ' + (f.worker || 'worker type not given') +
+    '\n• Status Active, all ' + steps.length + ' steps Pending; owners get assigned and nudged.';
+  return postMessage({ channel: ev.channel, thread_ts, text: txt, blocks: [
+    { type: 'section', text: { type: 'mrkdwn', text: txt } },
+    { type: 'actions', elements: [
+      { type: 'button', style: 'primary', action_id: 'add_confirm', value, text: { type: 'plain_text', text: 'Confirm' } },
+      { type: 'button', action_id: 'add_cancel', value, text: { type: 'plain_text', text: 'Cancel' } } ] } ] });
+}
+
+async function addButton(payload: any, a: any) {
+  const who = payload.user.id; const f = JSON.parse(a.value || '{}');
+  const channel = payload.channel?.id, thread_ts = payload.message?.thread_ts || payload.message?.ts;
+  if (a.action_id === 'add_cancel') return respond(payload.response_url, { replace_original: true, text: '✖️ Not added (cancelled by <@' + who + '>).' });
+  try {
+    const id = await addPerson(f.flow, { Name: f.name, Country: f.country, 'Worker type': f.worker, 'Day 0': f.day0, 'Added on': todayIso() });
+    if (!id) throw new Error('the tracker is not connected');
+    let started = '';
+    if (sheetOn()) { const log = await pollSheet(); started = log.some(l => l.includes(id)) ? ' Flow started: owners are assigned in #people-ops-alerts.' : ''; }
+    await respond(payload.response_url, { replace_original: true, text: '✅ <@' + who + '> added *' + f.name + '* (' + id + ') to the tracker: ' + (f.flow === 'Joiner' ? 'starts ' : 'last day ') + pretty(f.day0) + ' ' + f.day0.slice(0, 4) + '.' + started });
+    const d = await load(); const p = d.people.find(x => x.id === id);
+    if (p) await postMessage({ channel, thread_ts, text: await updateRequest({ user: who, channel, type: 'app_mention', text: '', ts: '' } as any, p) });
+  } catch (err: any) {
+    await respond(payload.response_url, { replace_original: false, text: '⚠️ Could not add them: ' + err.message });
+  }
 }

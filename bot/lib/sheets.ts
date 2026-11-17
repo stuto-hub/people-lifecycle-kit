@@ -94,3 +94,8 @@ export async function setSheetCell(tab: 'Joiners' | 'Leavers', personId: string,
     await api('/values/' + range('_' + tab, a1) + '?valueInputOption=RAW', { method: 'PUT', body: JSON.stringify({ values: [[value]] }) });
   } catch { /* snapshot tab not made yet: the next poll creates it */ }
 }
+
+/** Adds a row at the bottom of a tab (typed as if a person entered it, so dates become dates). */
+export async function appendRow(tab: string, values: string[]) {
+  await api('/values/' + range(tab, 'A1') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', { method: 'POST', body: JSON.stringify({ values: [values] }) });
+}
