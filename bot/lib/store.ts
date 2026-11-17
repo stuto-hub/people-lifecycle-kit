@@ -1,0 +1,147 @@
+/**
+ * The data layer. System of record = the tracker: CSV files in bot/tracker, edited in GitHub.
+ *   joiners.csv / leavers.csv  one row per person; one column per step (Pending / Done / Blocked / N/A)
+ *   steps.csv                  the trigger table: step, flow, offset from day 0, owner role, flags, nudge text
+ *   guides.csv / questions.csv what /people and the chat bot answer from
+ * Every save in GitHub is a commit, so the change history doubles as an audit trail.
+ */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { addDays, diffDays } from './core.js';
+import { CONFIG, env, trackerUrl } from './config.js';
+import { toObjects, setCellInCsv } from './csv.js';
+import type { Data, Person, Row, Step, StepStatus, Task } from './types.js';
+
+export const FILES = { Joiners: 'joiners.csv', Leavers: 'leavers.csv', Steps: 'steps.csv', Guides: 'guides.csv', Questions: 'questions.csv' } as const;
+export type Tab = keyof typeof FILES;
+export type Texts = Record<Tab, string>;
+
+let override: Data | null = null;
+export function setData(d: Data | null) { override = d; }          // tests
+
+export const sheetLink = () => trackerUrl();
+
+// ---------------- reading ----------------
+export function readTexts(dir = path.join(process.cwd(), 'tracker')): Texts {
+  const out = {} as Texts;
+  for (const [tab, file] of Object.entries(FILES)) out[tab as Tab] = readFileSync(path.join(dir, file), 'utf8');
+  return out;
+}
+
+export async function load(): Promise<Data> {
+  if (override) return override;
+  return fromTexts(readTexts());
+}
+
+const yes = (v: unknown) => v === true || /^(yes|y|true|✓|x)$/i.test(String(v || '').trim());
+
+/** Dates are typed as yyyy-mm-dd; anything else that parses is accepted too. */
+export function normDate(v: unknown): string {
+  const s = String(v || '').trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? '' : new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())).toISOString().slice(0, 10);
+}
+
+/** Step columns are headed "J04 Order laptop ...": the ID before the first space links them to steps.csv. */
+export const stepIdOf = (header: string) => (String(header || '').match(/^([JL]\d{2})\b/) || [])[1] || '';
+
+/** One joiners/leavers row -> a person + the status of each of their steps. */
+export function personFromRow(row: Row, tab: string): { person: Person; status: Record<string, StepStatus> } {
+  const p: Person = { id: row.ID, Name: row.Name, Flow: tab === 'Leavers' ? 'Leaver' : 'Joiner', Country: row.Country, 'Worker type': row['Worker type'],
+    'Day 0': normDate(row['Day 0']), Status: row.Status, 'Added on': normDate(row['Added on']), POC: row.POC,
+    'Lead (Slack ID)': row['Lead (Slack ID)'] || '', 'Buddy (Slack ID)': row['Buddy (Slack ID)'] || '', 'Shared logins': row['Shared logins'] || '',
+    Notes: row.Notes || '' };
+  const status: Record<string, StepStatus> = {};
+  for (const [h, v] of Object.entries(row)) {
+    const sid = stepIdOf(h); const val = String(v || '').trim();
+    if (!sid || !val || /^pending$/i.test(val)) continue;
+    status[p.id + '::' + sid] = /^n\/?a$/i.test(val) ? { Status: 'Done', 'N/A': true }
+      : { Status: /^done$/i.test(val) ? 'Done' : /^blocked$/i.test(val) ? 'Blocked' : val, Notes: /blocked/i.test(val) ? p.Notes : '' };
+  }
+  return { person: p, status };
+}
+
+export function fromTexts(t: Texts): Data {
+  const people: Person[] = [], status: Record<string, StepStatus> = {};
+  for (const tab of ['Joiners', 'Leavers'] as const) for (const row of toObjects(t[tab])) {
+    if (!row.ID) continue;
+    const r = personFromRow(row, tab); people.push(r.person); Object.assign(status, r.status);
+  }
+  const steps: Step[] = toObjects(t.Steps).filter(s => s.ID).map(s => ({ id: s.ID, Step: s.Step, Flow: s.Flow as Step['Flow'],
+    'Offset (days)': Number(s['Offset (days)']), 'Owner role': s['Owner role'], Critical: yes(s.Critical), 'Human moment': yes(s['Human moment']),
+    Confidential: yes(s.Confidential), 'Recheck if day 0 moves': yes(s['Recheck if day 0 moves']), 'Nudge text': s['Nudge text'] }));
+  const guides = toObjects(t.Guides).filter(g => g.Guide).map(g => ({ Guide: g.Guide, Owner: g.Owner, 'Last reviewed': normDate(g['Last reviewed']), Link: g.Link }));
+  const questions = toObjects(t.Questions).filter(q => q.Question).map(q => ({ Question: q.Question, Guide: q.Guide, Keywords: q.Keywords,
+    Answer: q.Answer, Action: q.Action, Confidential: yes(q.Confidential) }));
+  return { people, steps, status, guides, questions, fromTracker: true };
+}
+
+// ---------------- writing (one cell, as a commit) ----------------
+const gh = (p: string, init: RequestInit = {}) => fetch('https://api.github.com/repos/' + CONFIG.REPO + '/contents/' + p, { ...init,
+  headers: { Authorization: 'Bearer ' + env('TRACKER_TOKEN'), Accept: 'application/vnd.github+json', 'User-Agent': 'people-ops-bot', ...(init.headers || {}) } });
+
+/**
+ * Writes e.g. "Done" into a person's step column (column = step ID like "J04", or a column name like "Added on").
+ * Returns false when no TRACKER_TOKEN is set (nothing written).
+ */
+export async function setCell(personId: string, column: string, value: string, note = ''): Promise<boolean> {
+  if (override) {                                          // tests: update the in-memory data
+    if (/^[JL]\d{2}$/.test(column)) override.status[personId + '::' + column] = { Status: value };
+    else { const p = override.people.find(x => x.id === personId); if (p) (p as any)[column] = value; }
+    return false;
+  }
+  if (!env('TRACKER_TOKEN')) return false;
+  const file = CONFIG.TRACKER_DIR + '/' + (/^L/i.test(personId) ? FILES.Leavers : FILES.Joiners);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const cur: any = await (await gh(file + '?ref=main')).json();
+    if (!cur.content) throw new Error('could not read ' + file + ' (' + (cur.message || 'no content') + ')');
+    const next = setCellInCsv(Buffer.from(cur.content, 'base64').toString('utf8'), personId, column, value);
+    if (next === null) throw new Error(personId + ' / ' + column + ' not found in ' + file);
+    const res = await gh(file, { method: 'PUT', body: JSON.stringify({ branch: 'main', sha: cur.sha,
+      message: 'Tracker: ' + personId + ' ' + column + ' = ' + value + (note ? ' (' + note + ')' : ''),
+      content: Buffer.from(next).toString('base64') }) });
+    if (res.ok) return true;
+    if (res.status !== 409) throw new Error('GitHub write failed: ' + res.status);   // 409 = someone saved in between: retry
+  }
+  throw new Error('GitHub write kept conflicting');
+}
+
+// ---------------- tasks ----------------
+const live = (p: Person) => /active|test/i.test(p.Status || '');
+
+/**
+ * Tasks are worked out, not stored: one per person x step of their flow.
+ * Due = day 0 + offset; steps already past when the person was added are pulled to that day (short notice).
+ */
+export function buildTasks(d: Data, today: string): Task[] {
+  const tasks: Task[] = [];
+  for (const p of d.people.filter(p => p['Day 0'])) {
+    for (const s of d.steps.filter(s => s.Flow === p.Flow)) {
+      const key = p.id + '::' + s.id;
+      const st = d.status[key] || { Status: '' };
+      let due = addDays(p['Day 0'], Number(s['Offset (days)'])), notes = st.Notes || '';
+      if (p['Added on'] && diffDays(due, p['Added on']) < 0) { due = p['Added on']; notes = notes || 'Short notice: due date pulled to the day they were added'; }
+      const status = st.Status || 'Not started';
+      const late = diffDays(today, due);
+      const open = status !== 'Done';
+      tasks.push({ _id: key, _url: sheetLink(), Person: [p.id], Step: s.Step, StepId: s.id, Due: due, Status: status, Notes: notes,
+        'Owner role': s['Owner role'], Critical: s.Critical, 'Human moment': s['Human moment'], Confidential: s.Confidential,
+        'Needs action': open && live(p) && late >= 0,
+        Health: !open ? '✅ Done' : status === 'Blocked' ? '⛔ Blocked' : late > 0 ? '🔴 ' + late + 'd overdue' : late === 0 ? '🔔 Due today' : '⚪ Upcoming',
+        'Escalate to': open && late >= (s.Critical ? 1 : 2) ? 'lead' : open && late >= 1 ? 'People Ops lead' : '' });
+    }
+  }
+  return tasks;
+}
+
+export const people = (d: Data): Person[] => d.people.map(p => ({ ...p, _id: p.id, _url: sheetLink() }));
+
+/** Share of a person's steps that are Done (N/A counts as done). */
+export function percentDone(d: Data, p: Person): string {
+  const mine = d.steps.filter(s => s.Flow === p.Flow);
+  if (!mine.length) return '';
+  const done = mine.filter(s => (d.status[p.id + '::' + s.id] || { Status: '' }).Status === 'Done').length;
+  return Math.round(100 * done / mine.length) + '%';
+}

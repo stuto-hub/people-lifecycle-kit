@@ -1,0 +1,37 @@
+/**
+ * Settings that are safe to keep in code. Secrets never live here: they come from
+ * environment variables (Vercel project settings and GitHub Actions secrets).
+ *   SLACK_BOT_TOKEN       xoxb-... from the Slack app (OAuth & Permissions)
+ *   SLACK_SIGNING_SECRET  Slack app > Basic Information; proves a request came from Slack
+ *   ANTHROPIC_API_KEY     Claude Console > API keys; powers chat answers (without it: rule-based answers)
+ *   TRACKER_TOKEN         Vercel only: GitHub fine-grained token (this repo, Contents: read and write)
+ *                         so "Mark done" in Slack can write Done into the tracker
+ */
+export const CONFIG = {
+  TZ: 'Asia/Kolkata',
+  REPO: 'stuto-hub/people-lifecycle-kit',
+  TRACKER_DIR: 'bot/tracker',            // joiners.csv, leavers.csv, steps.csv, guides.csv, questions.csv
+  CHANNEL: 'C0CJ554MD3K',               // #people-ops-alerts
+  ROLES: {                              // role -> Slack member ID (demo: everyone is the same person)
+    'People Ops': 'U0AGY9M1J8M', 'People Ops lead': 'U0AGY9M1J8M',
+    'Hiring coordinator': 'U0AGY9M1J8M', 'IT': 'U0AGY9M1J8M', 'Finance': 'U0AGY9M1J8M'
+  } as Record<string, string>,
+  FALLBACK_USER: 'U0AGY9M1J8M',        // used when a Lead/Buddy ID in the tracker is a placeholder
+  TEMPLATES: ['Spain|Contractor', 'Brazil|Employee', 'India|Contractor', 'United States|Contractor'],
+  STALE_DAYS: 180,
+  CLAUDE_MODEL: 'claude-haiku-5-5'      // fastest; switch to 'claude-sonnet-5-5' for richer answers
+};
+
+export const trackerUrl = (file = '') => 'https://github.com/' + CONFIG.REPO + '/blob/main/' + CONFIG.TRACKER_DIR + '/' + (file || 'joiners.csv');
+export const env = (k: string) => process.env[k] || '';
+export const isSlackId = (id: unknown) => /^[UWC][A-Z0-9]{6,}$/.test(String(id || ''));
+
+/** Today in the company time zone. TODAY=YYYY-MM-DD overrides it for demos and tests. */
+export function todayIso(): string {
+  const forced = env('TODAY');
+  if (forced) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(forced)) throw new Error('TODAY must look like 2026-11-16');
+    return forced;
+  }
+  return new Intl.DateTimeFormat('en-CA', { timeZone: CONFIG.TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
