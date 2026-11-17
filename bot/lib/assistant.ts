@@ -159,9 +159,14 @@ export async function answerChat(ev: SlackEvent) {
   const thread_ts = ev.type === 'app_mention' ? (ev.thread_ts || ev.ts) : ev.thread_ts;
   const tagged = taggedPeople(ev);
   if (tagged.length) return assignTask(ev, tagged, thread_ts);
-  if (DATE_CHANGE.test(question)) {
-    const p = findPerson(question, peopleOf(await load()));
-    const iso = parseDate(question, todayIso());
+  let dateAsk = DATE_CHANGE.test(question) ? question : '';
+  if (!dateAsk && ev.thread_ts && parseDate(question, todayIso())) {      // "this is the new date 14/1/2026" in the same thread
+    const earlier = (await history(ev)).filter(m => m.role === 'user').map(m => m.content).join(' ');
+    if (DATE_CHANGE.test(earlier)) dateAsk = earlier + ' ' + question;
+  }
+  if (dateAsk) {
+    const p = findPerson(dateAsk, peopleOf(await load()));
+    const iso = parseDate(question, todayIso()) || parseDate(dateAsk, todayIso());
     if (p && iso) return previewDateChange(ev, p, iso, thread_ts);
     if (p || iso) return postMessage({ channel: ev.channel, thread_ts, text: '🤔 I can move a start or last day, but I need ' +
       (!p ? 'the person (name, country or ID like J-102)' : 'the new date (e.g. 4 Dec)') + '. Try: _Spain joiner start date moves to 4 Dec_' });
@@ -235,19 +240,34 @@ async function taskButton(payload: any, a: any) {
 const DATE_CHANGE = /\b(start date|joining date|date of joining|doj|day 0|last day|leaving date|last working day)\b.*\b(move|moves|moved|change|changes|changed|shift|shifts|now|to|is)\b/i;
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-/** "4 Dec", "Dec 4", "4th December 2026", "2026-12-04" -> 2026-12-04. Without a year: the next such date from today. */
+/**
+ * "4 Dec", "Dec 4th", "2026-12-04", "14/1/2026" -> an ISO date. Numbers are read day/month (India) unless that
+ * is impossible (12/31 = 31 Dec). "from X to Y" -> Y. Without a year: the next such date from today.
+ */
 export function parseDate(text: string, today: string): string {
-  const iso = text.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
-  if (iso) return iso[0];
-  const m = text.toLowerCase().match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s+(\d{4}))?/)
-    || text.toLowerCase().match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?/);
-  if (!m) return '';
-  const [day, mon] = /\d/.test(m[1]) ? [Number(m[1]), m[2]] : [Number(m[2]), m[1]];
-  const pad = (n: number) => String(n).padStart(2, '0');
-  let year = m[3] ? Number(m[3]) : Number(today.slice(0, 4));
-  let out = year + '-' + pad(MONTHS.indexOf(mon) + 1) + '-' + pad(day);
-  if (!m[3] && out < addDays(today, -60)) out = (year + 1) + out.slice(4);   // "4 Jan" said in December = next year
-  return day >= 1 && day <= 31 ? out : '';
+  const t = text.toLowerCase(), pad = (n: number) => String(n).padStart(2, '0');
+  const found: { at: number; iso: string; yearGiven: boolean }[] = [];
+  const add = (at: number, y: number | null, m: number, d: number) => {
+    if (m < 1 || m > 12 || d < 1 || d > 31) return;
+    const year = y === null ? Number(today.slice(0, 4)) : y < 100 ? 2000 + y : y;
+    found.push({ at, iso: year + '-' + pad(m) + '-' + pad(d), yearGiven: y !== null });
+  };
+  for (const m of t.matchAll(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/g)) add(m.index!, Number(m[1]), Number(m[2]), Number(m[3]));
+  for (const m of t.matchAll(/\b(\d{1,2})[\/.](\d{1,2})(?:[\/.](\d{2,4}))?\b/g)) {
+    const a = Number(m[1]), b = Number(m[2]), y = m[3] ? Number(m[3]) : null;
+    if (b > 12 && a <= 12) add(m.index!, y, a, b); else add(m.index!, y, b, a);       // day/month unless impossible
+  }
+  for (const m of t.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:,?\s+(\d{4}))?/g))
+    add(m.index!, m[3] ? Number(m[3]) : null, MONTHS.indexOf(m[2]) + 1, Number(m[1]));
+  for (const m of t.matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?/g))
+    add(m.index!, m[3] ? Number(m[3]) : null, MONTHS.indexOf(m[1]) + 1, Number(m[2]));
+  if (!found.length) return '';
+  const toAt = t.lastIndexOf(' to ');
+  found.sort((a, b) => a.at - b.at);
+  const pick = (toAt >= 0 && found.filter(f => f.at > toAt).pop()) || found[found.length - 1];
+  let out = pick.iso;
+  if (!pick.yearGiven && out < addDays(today, -60)) out = (Number(out.slice(0, 4)) + 1) + out.slice(4);   // "4 Jan" said in December
+  return out;
 }
 
 /** Steps that a moved Day 0 reopens, with their owner and new due date. */
@@ -262,7 +282,8 @@ export async function previewDateChange(ev: SlackEvent, p: Person, iso: string, 
   if (p['Day 0'] === iso) return postMessage({ channel: ev.channel, thread_ts, text: '👍 *' + p.Name + '*\'s ' + what + ' is already ' + pretty(iso) + '. Nothing to change.' });
   const list = affected(p, iso, d.steps).map(a => '• ' + (a.s.Confidential ? 'a confidential step' : a.s.Step) + ' → <@' + a.o.id + '>, new due ' + pretty(a.due)).join('\n');
   const value = JSON.stringify({ id: p.id, iso, r: ev.user });
-  const text = '📅 Move *' + p.Name + '*\'s ' + what + ' from *' + pretty(p['Day 0']) + '* to *' + pretty(iso) + '*?\nOn confirm I will update the tracker, set these back to Pending and tag the owners:\n' + (list || '• (no date-dependent steps)');
+  const past = iso < todayIso() ? '\n⚠️ ' + pretty(iso) + ' ' + iso.slice(0, 4) + ' is in the past. If you meant another year, press Cancel and send it again.' : '';
+  const text = '📅 Move *' + p.Name + '*\'s ' + what + ' from *' + pretty(p['Day 0']) + '* to *' + pretty(iso) + ' ' + iso.slice(0, 4) + '*?' + past + '\nOn confirm I will update the tracker, set these back to Pending and tag the owners:\n' + (list || '• (no date-dependent steps)');
   return postMessage({ channel: ev.channel, thread_ts, text, blocks: [
     { type: 'section', text: { type: 'mrkdwn', text } },
     { type: 'actions', elements: [
