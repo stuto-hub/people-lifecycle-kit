@@ -232,6 +232,7 @@ test('Chat: a DM gets one Claude answer grounded in the guides, even when Slack 
   assert.equal(f.calls.claude.length, 1);
   assert.match(f.calls.claude[0].system, /Answer ONLY from the KNOWLEDGE/);
   assert.match(f.calls.claude[0].system, /Leave policy \| owner: People Ops \| review due/);
+  assert.match(f.calls.claude[0].system, /Brazil \(employees\): 30 days a year/, 'handbook details are given to Claude');
   assert.equal(f.calls.slack.length, 1, 'one "Thinking…" message');
   assert.match(f.calls.updates[0].text, /Claude answer for: how do I apply for leave in Brazil\?/);
 });
@@ -261,8 +262,8 @@ test('Chat: Claude is told exactly which follow-up actions happened', async () =
   await POST(slackRequest(dm('E40', 'who do I ask about my invoice?')));
   await POST(slackRequest(dm('E41', 'last day is Friday, what happens to my access?')));
   await drain();
-  assert.match(f.calls.claude[0].system, /ACTIONS TAKEN\n- The question was sent to Finance\. It was NOT logged as a gap\./);
-  assert.match(f.calls.claude[1].system, /ACTIONS TAKEN\n- People Ops was alerted privately/);
+  assert.match(f.calls.claude[0].system, /ACTIONS TAKEN \(for this message, just now\)\n- The question was sent to Finance\. It was NOT logged as a gap\./);
+  assert.match(f.calls.claude[1].system, /ACTIONS TAKEN \(for this message, just now\)\n- People Ops was alerted privately/);
   assert.ok(!f.calls.slack.some(m => /Unanswered question/.test(m.text)), 'the invoice question is not logged as a gap');
 });
 
