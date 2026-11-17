@@ -185,6 +185,7 @@ export async function answerChat(ev: SlackEvent) {
     if (p || iso) return postMessage({ channel: ev.channel, thread_ts, text: '🤔 I can move a start or last day, but I need ' +
       (!p ? 'the person (name, country or ID like J-102)' : 'the new date (e.g. 4 Dec)') + '. Try: _Spain joiner start date moves to 4 Dec_' });
   }
+  if (STATUS_CHANGE.test(question)) return changeStatus(ev, question, thread_ts);
   if (NUDGE.test(question)) {                         // "chase / remind / nudge the owners for X" -> tag + DM them
     const p = findPerson(question, peopleOf(await load()));
     if (p) return postMessage({ channel: ev.channel, thread_ts, text: await updateRequest(ev, p, thread_ts) });
@@ -472,3 +473,35 @@ async function addButton(payload: any, a: any) {
 
 /** Messages that only make sense with the earlier ones: "and for employees?", "what about Spain?", "who owns it?". */
 const FOLLOWUP = { test: (q: string) => q.split(/\s+/).filter(Boolean).length <= 8 || /^(and|what about|how about|also|then|so|but|ok|okay)\b/i.test(q.trim()) };
+
+// ---------------- "mark the laptop as done for J-104" / "change it from pending to done" ----------------
+const STATUS_CHANGE = /\b(mark|set|change|update|move|switch)\b[^?]*\b(done|complete[d]?|finished|pending|blocked|not done)\b/i;
+
+export async function changeStatus(ev: SlackEvent, question: string, thread_ts?: string) {
+  const d = await load(); const ppl = peopleOf(d);
+  const earlier = ev.thread_ts ? (await history(ev)).map(t => t.content).join(' ') : '';
+  const p = findPerson(question, ppl) || findPerson(earlier, ppl);
+  const say = (text: string) => postMessage({ channel: ev.channel, thread_ts, text });
+  if (!p) return say('🤔 Which person? Use their name or ID, e.g. _mark the laptop as done for J-104_.');
+  if (!canSeeTracker(ev.user)) return say('Only People Ops and step owners can change the tracker.');
+  const word = ((question.match(/\bto\s+(done|complete\w*|finished|pending|blocked|not done)\b/i) || question.match(/\b(done|complete\w*|finished|pending|blocked|not done)\b/i)) || [])[1] || '';
+  const value = /blocked/i.test(word) ? 'Blocked' : /pending|not done/i.test(word) ? 'Pending' : 'Done';
+  const steps = d.steps.filter(s => s.Flow === p.Flow);
+  const step = stepFor(question, steps) || (ev.thread_ts ? stepFor(earlier, steps) : undefined);
+  if (!step) {
+    const open = buildTasks(d, todayIso()).filter(t => t.Person[0] === p.id && t.Status !== 'Done').map(t => t.StepId + ' ' + t.Step);
+    return say('🤔 Which step for *' + p.Name + '*? Say e.g. _mark the laptop as done for ' + p.id + '_. Open steps: ' + open.join(', '));
+  }
+  const old = (d.status[p.id + '::' + step.id] || { Status: 'Pending' }).Status;
+  const label = step.Confidential && !ev.channel.startsWith('D') ? 'a confidential step' : '*' + step.Step + '*';
+  if (old === value) return say('👍 ' + label + ' for *' + p.Name + '* is already ' + value + '.');
+  try {
+    const saved = await setCell(p.id, step.id, value, 'set in Slack by ' + ev.user);
+    if (saved && sheetOn()) {
+      const row = await getRow(p.id); const col = row && Object.keys(row).find(h => stepIdOf(h) === step.id);
+      if (row && col) await onTrackerChange({ tab: p.Flow === 'Joiner' ? 'Joiners' : 'Leavers', columns: [col], oldValue: old, value, row });
+    }
+    return say('✅ ' + label + ' for *' + p.Name + '* (' + p.id + '): ' + old + ' → *' + value + '*' + (saved ? ' in the Sheet.' : ' (tracker not connected).') +
+      ' <' + sheetLink(p.Flow === 'Joiner' ? 'joiners.csv' : 'leavers.csv') + '|Open the tracker>');
+  } catch (err: any) { return say('⚠️ Could not update the Sheet: ' + err.message); }
+}
