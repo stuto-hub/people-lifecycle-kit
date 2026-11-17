@@ -567,3 +567,10 @@ test('Copied row with a repeated ID gets the next free ID in the Sheet, People O
     assert.ok(f.calls.slack.some(m => /repeated the ID J-103, so \*TEST contractor \(India\)\* now has the ID \*J-104\*/.test(m.text)));
   } finally { delete process.env.GOOGLE_SA_KEY; (globalThis as any).fetch = fake; }
 });
+
+test('Dates: "18 Jan 2027" is 18 Jan, not 20 Jan (the year is not read as a day)', () => {
+  assert.equal(parseDate("TEST fake joiner's start date moves to 18 Jan 2027", '2026-11-17'), '2027-01-18');
+  assert.equal(parseDate('start date moves to Jan 18 2027', '2026-11-17'), '2027-01-18');
+  assert.equal(parseDate('start date moves to January 18, 2027', '2026-11-17'), '2027-01-18');
+  assert.equal(parseDate('last day moves to 3rd Feb', '2026-11-17'), '2027-02-03');
+});
