@@ -40,3 +40,4 @@ Edit a CSV in GitHub (pencil icon) and commit. Every save is a commit, so the hi
 - `npm test` (type-check: `npm run typecheck`) · preview without Slack: `npm run preview`
 - Demo another day: Actions → *Daily lifecycle run* → Run workflow → `today = 2026-11-30`
 - Health check: `https://<project>.vercel.app/api/slack`
+- After adding or changing a setting in Vercel, push any commit (or redeploy) so the bot picks it up.
