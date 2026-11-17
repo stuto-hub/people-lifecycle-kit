@@ -42,10 +42,20 @@ async function api(path: string, init: RequestInit = {}): Promise<any> {
 
 const range = (tab: string, a1 = '') => encodeURIComponent("'" + tab + "'" + (a1 ? '!' + a1 : ''));
 
-/** A tab as rows of text (what people see), or null if the tab does not exist. */
+const DATE_COLS = /^(day 0|added on|last reviewed)$/i;
+/** Google stores dates as day numbers counted from 30 Dec 1899. */
+export const serialToIso = (n: number) => new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000).toISOString().slice(0, 10);
+
+/**
+ * A tab as rows of text, or null if the tab does not exist. Dates are read as real dates (not as displayed),
+ * so the Sheet's locale or date format (13/1/27, 1/13/2027, 13 Jan 2027) never changes what the bot sees.
+ */
 export async function readTab(tab: string): Promise<string[][] | null> {
-  try { return (await api('/values/' + range(tab) + '?valueRenderOption=FORMATTED_VALUE')).values || []; }
+  let values: any[][];
+  try { values = (await api('/values/' + range(tab) + '?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER')).values || []; }
   catch (err: any) { if (/Unable to parse range/i.test(err.message)) return null; throw err; }
+  const head = (values[0] || []).map(h => String(h ?? '').trim());
+  return values.map((row, r) => row.map((v, c) => r > 0 && typeof v === 'number' && DATE_COLS.test(head[c] || '') ? serialToIso(v) : String(v ?? '')));
 }
 export const tabCsv = async (tab: string) => { const v = await readTab(tab); return v === null ? null : stringifyCsv(v); };
 
@@ -80,8 +90,7 @@ export async function setSheetCell(tab: 'Joiners' | 'Leavers', personId: string,
   if (c < 0 || r < 0) throw new Error(personId + ' / ' + column + ' not found in the ' + tab + ' tab');
   const a1 = colLetter(c) + (r + 1);
   await writeCell(tab, a1, value);
-  try {     // the snapshot gets exactly what the Sheet now shows, so the next poll does not see this as a new edit
-    const shown = ((await api('/values/' + range(tab, a1) + '?valueRenderOption=FORMATTED_VALUE')).values || [['']])[0][0] || '';
-    await api('/values/' + range('_' + tab, a1) + '?valueInputOption=RAW', { method: 'PUT', body: JSON.stringify({ values: [[shown]] }) });
+  try {     // the snapshot gets the same value (dates as YYYY-MM-DD, like readTab), so the next poll does not see this as an edit
+    await api('/values/' + range('_' + tab, a1) + '?valueInputOption=RAW', { method: 'PUT', body: JSON.stringify({ values: [[value]] }) });
   } catch { /* snapshot tab not made yet: the next poll creates it */ }
 }

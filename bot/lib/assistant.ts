@@ -122,15 +122,15 @@ export async function assignTask(ev: SlackEvent, assignees: string[], thread_ts?
 }
 
 // ---------------- "any update on X?" = tag the owners of X's open steps ----------------
-const UPDATE = /\b(update|status|pending|delay|delayed|chase|follow ?up|remind|stuck|where are we|progress)\b/i;
+const UPDATE = /\b(update|status|pending|delay|delayed|chase|follow ?up|remind|stuck|where are we|progress|what's left|whats left|open items|date of joining|joining date|start date|last day)\b/i;
 const NOISE = new Set(['test', 'demo', 'joiner', 'leaver', 'contractor', 'employee', 'fake', 'short', 'notice', 'short-notice']);
 
 export function findPerson(text: string, people: Person[]): Person | undefined {
   const id = (text.match(/\b([JL]-\d{3})\b/i) || [])[1];
   if (id) return people.find(p => p.id.toLowerCase() === id.toLowerCase());
   const t = text.toLowerCase();
-  const full = people.find(p => { const n = p.Name.toLowerCase(), short = n.replace(/\(.*?\)/g, '').trim();
-    return t.includes(n) || (short.length > 4 && t.includes(short)); });    // "TEST fake joiner", "Demo joiner (Spain)"
+  const full = people.find(p => t.includes(p.Name.toLowerCase()))          // exact name first: "TEST contractor (India)"
+    || people.find(p => { const short = p.Name.toLowerCase().replace(/\(.*?\)/g, '').trim(); return short.length > 4 && t.includes(short); });
   if (full) return full;
   return people.find(p => (p.Name + ' ' + p.Country).toLowerCase().split(/[^a-z]+/).some(w => w.length > 3 && !NOISE.has(w) && new RegExp('\\b' + w + '\\b').test(t)));
 }
@@ -245,7 +245,7 @@ async function taskButton(payload: any, a: any) {
 }
 
 // ---------------- "X's start date moves to 4 Dec" -> preview -> Confirm ----------------
-const DATE_CHANGE = /\b(start date|joining date|date of joining|doj|day 0|last day|leaving date|last working day)\b.*\b(move|moves|moved|change|changes|changed|shift|shifts|now|to|is)\b/i;
+const DATE_CHANGE = /\b(start date|joining date|date of joining|doj|day 0|last day|leaving date|last working day)\b.*\b(move|moves|moved|moving|change|changes|changed|changing|shift|shifts|shifted|postpone[sd]?|prepone[sd]?|push(ed)?|is now|now on)\b/i;
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 /**
