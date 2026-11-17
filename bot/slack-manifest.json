@@ -5,7 +5,7 @@
     "bot_user": { "display_name": "people-ops", "always_online": true },
     "slash_commands": [ { "command": "/people", "url": "https://YOUR-PROJECT.vercel.app/api/slack", "description": "Find a policy, guide, form or next step", "usage_hint": "how do I apply for leave in Brazil?", "should_escape": false } ]
   },
-  "oauth_config": { "scopes": { "bot": ["chat:write", "chat:write.public", "commands", "im:write", "im:history", "app_mentions:read"] } },
+  "oauth_config": { "scopes": { "bot": ["chat:write", "chat:write.public", "commands", "im:write", "im:history", "app_mentions:read", "channels:history", "groups:history"] } },
   "settings": {
     "event_subscriptions": { "request_url": "https://YOUR-PROJECT.vercel.app/api/slack", "bot_events": ["app_mention", "message.im"] },
     "interactivity": { "is_enabled": true, "request_url": "https://YOUR-PROJECT.vercel.app/api/slack" },
