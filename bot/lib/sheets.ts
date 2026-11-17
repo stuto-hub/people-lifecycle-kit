@@ -12,6 +12,7 @@ import { stringifyCsv } from './csv.js';
 export const sheetOn = () => !!env('GOOGLE_SA_KEY');
 const API = () => 'https://sheets.googleapis.com/v4/spreadsheets/' + CONFIG.SHEET_ID;
 let token: { value: string; exp: number } | null = null;
+let titles: { at: number; set: Set<string> } | null = null;
 
 const b64url = (s: string | Buffer) => Buffer.from(s).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 
@@ -33,11 +34,31 @@ async function accessToken(): Promise<string> {
   return token.value;
 }
 
+/** One Sheets API call. Google allows 60 reads a minute: on "quota exceeded" (429) wait and retry (2s, 6s, 15s). */
 async function api(path: string, init: RequestInit = {}): Promise<any> {
-  const res = await fetch(API() + path, { ...init, headers: { Authorization: 'Bearer ' + await accessToken(), 'content-type': 'application/json', ...(init.headers || {}) } });
-  const j: any = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error('Google Sheets: ' + ((j.error && j.error.message) || res.status));
-  return j;
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(API() + path, { ...init, headers: { Authorization: 'Bearer ' + await accessToken(), 'content-type': 'application/json', ...(init.headers || {}) } });
+    const j: any = await res.json().catch(() => ({}));
+    if (res.ok) return j;
+    if (res.status === 429 && attempt < 3) { await new Promise(r => setTimeout(r, [2000, 6000, 15000][attempt])); continue; }
+    throw new Error('Google Sheets: ' + ((j.error && j.error.message) || res.status));
+  }
+}
+
+/** Several tabs in ONE read (counts once against the quota). Missing tabs come back as null. */
+export async function readTabs(tabs: string[]): Promise<Record<string, string[][] | null>> {
+  if (!titles || Date.now() - titles.at > 600000) {          // tab names change rarely: check every 10 minutes
+    const meta = await api('?fields=sheets.properties.title');
+    titles = { at: Date.now(), set: new Set((meta.sheets || []).map((s: any) => s.properties.title)) };
+  }
+  const have = titles.set;
+  const want = tabs.filter(t => have.has(t));
+  const out: Record<string, string[][] | null> = Object.fromEntries(tabs.map(t => [t, null]));
+  if (!want.length) return out;
+  const q = want.map(t => 'ranges=' + range(t)).join('&');
+  const j = await api('/values:batchGet?' + q + '&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER');
+  (j.valueRanges || []).forEach((vr: any, i: number) => { out[want[i]] = normalise(vr.values || []); });
+  return out;
 }
 
 const range = (tab: string, a1 = '') => encodeURIComponent("'" + tab + "'" + (a1 ? '!' + a1 : ''));
@@ -54,6 +75,10 @@ export async function readTab(tab: string): Promise<string[][] | null> {
   let values: any[][];
   try { values = (await api('/values/' + range(tab) + '?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER')).values || []; }
   catch (err: any) { if (/Unable to parse range/i.test(err.message)) return null; throw err; }
+  return normalise(values);
+}
+
+function normalise(values: any[][]): string[][] {
   const head = (values[0] || []).map(h => String(h ?? '').trim());
   return values.map((row, r) => row.map((v, c) => r > 0 && typeof v === 'number' && DATE_COLS.test(head[c] || '') ? serialToIso(v) : String(v ?? '')));
 }
@@ -77,6 +102,7 @@ export async function ensureHiddenTab(tab: string) {
   const meta = await api('?fields=sheets.properties.title');
   if ((meta.sheets || []).some((s: any) => s.properties.title === tab)) return false;
   await api(':batchUpdate', { method: 'POST', body: JSON.stringify({ requests: [{ addSheet: { properties: { title: tab, hidden: true } } }] }) });
+  titles = null;
   return true;
 }
 

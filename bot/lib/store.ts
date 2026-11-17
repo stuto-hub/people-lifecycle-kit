@@ -11,7 +11,8 @@ import { addDays, diffDays } from './core.js';
 import { CONFIG, env, trackerUrl } from './config.js';
 import { toObjects, setCellInCsv } from './csv.js';
 import type { Data, Person, Row, Step, StepStatus, Task } from './types.js';
-import { sheetOn, tabCsv, setSheetCell, appendRow, readTab } from './sheets.js';
+import { sheetOn, setSheetCell, appendRow, readTab, readTabs } from './sheets.js';
+import { stringifyCsv } from './csv.js';
 
 export const FILES = { Joiners: 'joiners.csv', Leavers: 'leavers.csv', Steps: 'steps.csv', Guides: 'guides.csv', Questions: 'questions.csv', Handbook: 'handbook.md', Reminders: 'reminders.csv', Tools: 'tools.csv' } as const;
 export type Tab = keyof typeof FILES;
@@ -19,6 +20,7 @@ const OPTIONAL: string[] = ['Handbook', 'Reminders', 'Tools'];
 export type Texts = Record<Tab, string>;
 
 let override: Data | null = null;
+let textCache: { at: number; t: Texts } | null = null;
 export function setData(d: Data | null) { override = d; }          // tests
 
 export const sheetLink = (file = '') => trackerUrl(file);
@@ -53,12 +55,13 @@ export async function load(): Promise<Data> {
 export async function loadTexts(): Promise<Texts> {
   const dir = path.join(process.cwd(), 'tracker');
   if (!sheetOn()) return existsSync(path.join(dir, FILES.Joiners)) ? readTexts(dir) : fetchTexts();
-  const base = await fetchTexts();
-  await Promise.all((['Joiners', 'Leavers', 'Steps', 'Guides', 'Questions', 'Reminders', 'Tools'] as Tab[]).map(async tab => {
-    const csv = await tabCsv(tab);
-    if (csv !== null) base[tab] = csv;
+  if (textCache && Date.now() - textCache.at < 5000) return textCache.t;         // several lookups in one action share one read
+  const [base, tabs] = await Promise.all([fetchTexts(), readTabs(['Joiners', 'Leavers', 'Steps', 'Guides', 'Questions', 'Reminders', 'Tools'])]);
+  for (const [tab, rows] of Object.entries(tabs)) {
+    if (rows) base[tab as Tab] = stringifyCsv(rows);
     else if (tab === 'Joiners' || tab === 'Leavers') throw new Error('the Sheet has no "' + tab + '" tab');
-  }));
+  }
+  textCache = { at: Date.now(), t: base };
   return base;
 }
 
@@ -157,7 +160,7 @@ export async function setCell(personId: string, column: string, value: string, n
   }
   if (sheetOn()) {                                        // the Google Sheet is the tracker
     await setSheetCell(/^L/i.test(personId) ? 'Leavers' : 'Joiners', personId, column, value);
-    cache = null;
+    cache = null; textCache = null;
     return true;
   }
   if (!env('TRACKER_TOKEN')) return false;
@@ -238,6 +241,6 @@ export async function addPerson(flow: 'Joiner' | 'Leaver', fields: Record<string
   if (!sheetOn()) return '';
   const head = ((await readTab(tab)) || [[]])[0].map(h => String(h).trim());
   await appendRow(tab, head.map(h => h in row ? row[h] : /^[JL]\d{2}\b/.test(h) ? 'Pending' : ''));
-  cache = null;
+  cache = null; textCache = null;
   return id;
 }
