@@ -40,4 +40,8 @@ Edit a CSV in GitHub (pencil icon) and commit. Every save is a commit, so the hi
 - `npm test` (type-check: `npm run typecheck`) · preview without Slack: `npm run preview`
 - Demo another day: Actions → *Daily lifecycle run* → Run workflow → `today = 2026-11-30`
 - Health check: `https://<project>.vercel.app/api/slack`
-- After adding or changing a setting in Vercel, push any commit (or redeploy) so the bot picks it up.
+
+## Google Sheet mode
+With `GOOGLE_SA_KEY` set in Vercel, the Google Sheet (tabs Joiners / Leavers) is the tracker: the bot reads and writes it directly,
+and `/api/cron?job=poll` (every 5 minutes, `.github/workflows/poll.yml`) reacts to edits typed into the Sheet.
+Date changes can also be made from Slack: `@people-ops <person>'s start date moves to 4 Dec` → Confirm.
