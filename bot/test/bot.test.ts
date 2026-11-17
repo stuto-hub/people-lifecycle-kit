@@ -637,3 +637,23 @@ test('"new joiner" in a question is not an add request', async () => {
   await mention('what does a new joiner do on day 0?');
   assert.ok(!f.calls.slack.some(m => /Add a new \*joiner\*|To add a new/.test(m.text)));
 });
+
+test('Thread follow-ups keep the topic and never claim actions that did not happen', async () => {
+  const f = installFakes();
+  const fake = (globalThis as any).fetch;
+  (globalThis as any).fetch = async (url: string | URL, opts: RequestInit = {}) => String(url).includes('conversations.replies')
+    ? new Response(JSON.stringify({ ok: true, messages: [{ ts: '20.0', user: 'U0ASKER01', text: '<@U0BOT> can you share the payroll details for this month?' },
+        { ts: '20.1', bot_id: 'B1', text: 'Contractors: invoices due 25 Nov, paid 30 Nov.' }] }))
+    : fake(url, opts);
+  for (const [i, q] of ['and for employees in Brazil?', 'what happens if I miss the 25th?'].entries())
+    await POST(slackRequest({ type: 'event_callback', event_id: 'E2' + i, authorizations: [{ user_id: 'U0BOT' }], event: { type: 'app_mention',
+      channel: 'C0REMIND', user: 'U0ASKER01', ts: '20.' + (5 + i), thread_ts: '20.0', text: '<@U0BOT> ' + q } }));
+  await drain();
+  (globalThis as any).fetch = fake;
+  for (const c of f.calls.claude.slice(-2)) {
+    assert.match(c.system, /Best rule-based match: not used/);
+    assert.match(c.system, /ACTIONS TAKEN[^]*none/);
+    assert.doesNotMatch(c.system, /TRACKER \(live/, 'payroll follow-ups are not tracker lookups');
+  }
+  assert.ok(!f.calls.slack.some(m => /Unanswered question/.test(m.text)), 'nothing logged');
+});
