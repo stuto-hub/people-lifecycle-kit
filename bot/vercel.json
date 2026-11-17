@@ -1,0 +1,1 @@
+{ "functions": { "api/slack.ts": { "includeFiles": "tracker/**" } } }

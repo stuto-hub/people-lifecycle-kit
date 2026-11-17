@@ -1,0 +1,24 @@
+{
+  "name": "people-ops-bot",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Lifecycle bot: a CSV tracker in GitHub drives Slack nudges and escalations, plus a Claude-powered People Ops assistant.",
+  "type": "module",
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "daily": "tsx scripts/daily.ts daily",
+    "preview": "tsx scripts/daily.ts preview",
+    "on-change": "tsx scripts/on-change.ts",
+    "cleanup": "tsx scripts/cleanup.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@vercel/functions": ">=1.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
