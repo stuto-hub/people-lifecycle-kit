@@ -384,7 +384,7 @@ test('Google Sheet: edits typed in the Sheet are spotted and handled once; the b
   setData(null);
   const steps = fromTexts(readTexts()).steps.filter(s => s.Flow === 'Joiner');
   const head = ['ID', 'Name', 'Country', 'Worker type', 'Day 0', 'Status', 'Added on', 'POC', 'Lead (Slack ID)', 'Buddy (Slack ID)', 'Notes', ...steps.map(s => s.id + ' ' + s.Step)];
-  const row = (status: string) => ['J-201', 'Sheet joiner', 'India', 'Contractor', '11/30/2026', status, '', 'People Ops', '', '', '', ...steps.map(() => 'Pending')];
+  const row = (status: string) => ['J-201', 'Sheet joiner', 'India', 'Contractor', 46356 as any, status, '', 'People Ops', '', '', '', ...steps.map(() => 'Pending')];
   const tabs: Record<string, string[][]> = { Joiners: [head, row('Not started')], Leavers: [['ID', 'Name']] };
   const fakeFetch = (globalThis as any).fetch;
   (globalThis as any).fetch = async (url: string | URL, opts: RequestInit = {}) => {
@@ -455,4 +455,21 @@ test('Re-assign: "I changed the date for TEST fake joiner on the tracker, re-ass
   assert.match(reply.text, new RegExp('<@' + CONFIG.ROLES['Hiring coordinator'] + '> \\*Send agreement'));
   assert.ok(f.calls.slack.some(m => m.channel === CONFIG.ROLES['Hiring coordinator'] && m.blocks && /Your task/.test(m.text)), 'owners get a DM with Mark done');
   assert.ok(!f.calls.slack.some(m => /Unanswered question/.test(m.text)), 'not logged as a gap');
+});
+
+test('Status question: "TEST contractor (India), tell me their date of joining and what is pending" is not a date change', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-103', Name: 'TEST contractor (Kenya)', Country: 'Kenya', 'Day 0': '2027-01-20' }),
+                                     joinerRow({ ID: 'J-104', Name: 'TEST contractor (India)', Country: 'India', 'Day 0': '2026-12-15' })] });
+  await POST(slackRequest({ type: 'event_callback', event_id: 'E95', authorizations: [{ user_id: 'U0BOT' }], event: { type: 'app_mention', channel: 'C0REMIND', user: 'U0ASKER01', ts: '12.0',
+    text: '<@U0BOT> there is a joiner TEST contractor (India), tell me their date of joining and what all is pending' } }));
+  await drain();
+  const reply = f.calls.slack.find(m => m.channel === 'C0REMIND');
+  assert.match(reply.text, /\*TEST contractor \(India\)\* \(joiner, day 0 15 Dec/);
+  assert.doesNotMatch(reply.text, /I can move a start/);
+});
+
+test('Google Sheet dates are read as real dates, whatever the Sheet shows (13/1/27, 1/13/2027)', async () => {
+  const { serialToIso } = await import('../lib/sheets.js');
+  assert.equal(serialToIso(46356), '2026-11-30');
+  assert.equal(serialToIso(46400), '2027-01-13');
 });
