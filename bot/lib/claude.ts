@@ -61,7 +61,7 @@ export async function askClaude(question: string, kb: Knowledge, r: Match, past:
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: CONFIG.CLAUDE_MODEL, max_tokens: 500,
+    body: JSON.stringify({ model: CONFIG.CLAUDE_MODEL, max_tokens: 2048,
       system: SYSTEM_PROMPT + '\n\n' + knowledgeBlock(kb, r), messages: toMessages(past, question) })
   });
   const j: any = await res.json().catch(() => ({}));
