@@ -574,3 +574,35 @@ test('Dates: "18 Jan 2027" is 18 Jan, not 20 Jan (the year is not read as a day)
   assert.equal(parseDate('start date moves to January 18, 2027', '2026-11-17'), '2027-01-18');
   assert.equal(parseDate('last day moves to 3rd Feb', '2026-11-17'), '2027-02-03');
 });
+
+test('Assigned task about a tracker step: Done marks that step Done in the tracker', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-104', Name: 'TEST contractor (India)', Country: 'India' })] });
+  await POST(slackRequest({ type: 'event_callback', event_id: 'E99', authorizations: [{ user_id: 'U0BOT' }], event: { type: 'app_mention', channel: 'C0REMIND', user: 'U0ASKER01', ts: '13.0',
+    text: '<@U0BOT> please ship the laptop for TEST contractor (India) by Monday <@U0TEAMMATE>' } }));
+  await drain();
+  const msg = f.calls.slack.find(m => m.channel === 'C0REMIND');
+  assert.match(msg.text, /Tracker step: Order laptop \(deliver 2 days before start\) for TEST contractor \(India\)/);
+  await POST(slackRequest({ payload: JSON.stringify({ type: 'block_actions', user: { id: 'U0TEAMMATE' }, response_url: 'https://hooks.slack.test/r9',
+    channel: { id: 'C0REMIND' }, message: { ts: '14.0', thread_ts: '13.0' }, actions: [{ action_id: 'task_done', value: msg.blocks[1].elements[0].value }] }) }, { json: false }));
+  await drain();
+  assert.equal(f.data.status['J-104::J04'].Status, 'Done');
+});
+
+test('Step matching: agreement, accounts, buddy, access, exit call', async () => {
+  const { stepFor } = await import('../lib/assistant.js');
+  const d = fromTexts(readTexts());
+  const J = d.steps.filter(s => s.Flow === 'Joiner'), L = d.steps.filter(s => s.Flow === 'Leaver');
+  assert.equal(stepFor('send the contract to X', J)?.id, 'J01');
+  assert.equal(stepFor('create their slack and google accounts', J)?.id, 'J05');
+  assert.equal(stepFor('do the buddy intro', J)?.id, 'J08');
+  assert.equal(stepFor('revoke all access for X', L)?.id, 'L05');
+  assert.equal(stepFor('book the exit call', L)?.id, 'L01');
+});
+
+test('Self-serve leaving question gets the tools list and owners (not anyone\'s records)', async () => {
+  const f = installFakes(); f.data.tools = TOOLS;
+  await mention("I am leaving in the next few days, what all access will I hold till then and what happens to the rest of them", { user: 'U0RANDOM01' });
+  const sys = f.calls.claude.at(-1).system;
+  assert.match(sys, /TOOLS AND ACCESS OWNERS/);
+  assert.doesNotMatch(sys, /TRACKER \(live/);
+});
