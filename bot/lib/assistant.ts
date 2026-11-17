@@ -8,7 +8,10 @@
 import { matchQuestion } from './core.js';
 import type { GuideRef, Intent, Match } from './core.js';
 import { CONFIG, env, todayIso } from './config.js';
-import { load, setCell, sheetLink, buildTasks, people as peopleOf } from './store.js';
+import { load, setCell, sheetLink, buildTasks, people as peopleOf, getRow, stepIdOf } from './store.js';
+import { onTrackerChange } from './tracker-events.js';
+import { sheetOn } from './sheets.js';
+import { addDays } from './core.js';
 import { owner } from './lifecycle.js';
 import { pretty, diffDays } from './core.js';
 import type { Person } from './types.js';
@@ -156,6 +159,13 @@ export async function answerChat(ev: SlackEvent) {
   const thread_ts = ev.type === 'app_mention' ? (ev.thread_ts || ev.ts) : ev.thread_ts;
   const tagged = taggedPeople(ev);
   if (tagged.length) return assignTask(ev, tagged, thread_ts);
+  if (DATE_CHANGE.test(question)) {
+    const p = findPerson(question, peopleOf(await load()));
+    const iso = parseDate(question, todayIso());
+    if (p && iso) return previewDateChange(ev, p, iso, thread_ts);
+    if (p || iso) return postMessage({ channel: ev.channel, thread_ts, text: '🤔 I can move a start or last day, but I need ' +
+      (!p ? 'the person (name, country or ID like J-102)' : 'the new date (e.g. 4 Dec)') + '. Try: _Spain joiner start date moves to 4 Dec_' });
+  }
   if (UPDATE.test(question)) {
     const p = findPerson(question, peopleOf(await load()));
     if (p) return postMessage({ channel: ev.channel, thread_ts, text: await updateRequest(ev, p, thread_ts) });
@@ -192,11 +202,19 @@ export async function peopleCommand(form: URLSearchParams) {
 export async function buttonClick(payload: any) {
   const a = (payload.actions || [])[0];
   if (a && (a.action_id === 'task_done' || a.action_id === 'task_help')) return taskButton(payload, a);
+  if (a && (a.action_id === 'date_confirm' || a.action_id === 'date_cancel')) return dateButton(payload, a);
   if (!a || a.action_id !== 'mark_done') return;
   const who = payload.user.id;
   const [personId, stepId] = String(a.value).split('::');
   let saved = false, problem = '';
-  try { saved = await setCell(personId, stepId, 'Done', 'marked done in Slack by ' + who); } catch (err: any) { problem = err.message; }
+  try {
+    saved = await setCell(personId, stepId, 'Done', 'marked done in Slack by ' + who);
+    if (saved && sheetOn()) {                    // Sheet mode: log it like a tracker edit (✅ + % complete)
+      const row = await getRow(personId);
+      const col = row && Object.keys(row).find(h => stepIdOf(h) === stepId);
+      if (row && col) await onTrackerChange({ tab: /^L/i.test(personId) ? 'Leavers' : 'Joiners', columns: [col], oldValue: 'Pending', value: 'Done', row });
+    }
+  } catch (err: any) { problem = err.message; }
   await respond(payload.response_url, { replace_original: !problem,
     text: problem ? '⚠️ Could not update the tracker (' + problem + '). Please mark it Done there: ' + sheetLink()
       : '✅ Marked done by <@' + who + '>' + (saved ? ' (tracker updated)' : ' (demo: tracker not connected)') });
@@ -211,4 +229,67 @@ async function taskButton(payload: any, a: any) {
     return postMessage({ channel, thread_ts, text: '<@' + r + '> ✅ done by <@' + who + '>: *' + t + '*' });
   }
   return postMessage({ channel, thread_ts, text: '<@' + r + '> ❓ <@' + who + '> needs more info for: *' + t + '*. Please reply in this thread.' });
+}
+
+// ---------------- "X's start date moves to 4 Dec" -> preview -> Confirm ----------------
+const DATE_CHANGE = /\b(start date|joining date|date of joining|doj|day 0|last day|leaving date|last working day)\b.*\b(move|moves|moved|change|changes|changed|shift|shifts|now|to|is)\b/i;
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/** "4 Dec", "Dec 4", "4th December 2026", "2026-12-04" -> 2026-12-04. Without a year: the next such date from today. */
+export function parseDate(text: string, today: string): string {
+  const iso = text.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (iso) return iso[0];
+  const m = text.toLowerCase().match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s+(\d{4}))?/)
+    || text.toLowerCase().match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?/);
+  if (!m) return '';
+  const [day, mon] = /\d/.test(m[1]) ? [Number(m[1]), m[2]] : [Number(m[2]), m[1]];
+  const pad = (n: number) => String(n).padStart(2, '0');
+  let year = m[3] ? Number(m[3]) : Number(today.slice(0, 4));
+  let out = year + '-' + pad(MONTHS.indexOf(mon) + 1) + '-' + pad(day);
+  if (!m[3] && out < addDays(today, -60)) out = (year + 1) + out.slice(4);   // "4 Jan" said in December = next year
+  return day >= 1 && day <= 31 ? out : '';
+}
+
+/** Steps that a moved Day 0 reopens, with their owner and new due date. */
+function affected(p: Person, iso: string, steps: any[]) {
+  return steps.filter(s => s.Flow === p.Flow && s['Recheck if day 0 moves'])
+    .map(s => ({ s, o: owner(s['Owner role'], p), due: addDays(iso, s['Offset (days)']) }));
+}
+
+export async function previewDateChange(ev: SlackEvent, p: Person, iso: string, thread_ts?: string) {
+  const d = await load();
+  const what = p.Flow === 'Joiner' ? 'start date' : 'last day';
+  if (p['Day 0'] === iso) return postMessage({ channel: ev.channel, thread_ts, text: '👍 *' + p.Name + '*\'s ' + what + ' is already ' + pretty(iso) + '. Nothing to change.' });
+  const list = affected(p, iso, d.steps).map(a => '• ' + (a.s.Confidential ? 'a confidential step' : a.s.Step) + ' → <@' + a.o.id + '>, new due ' + pretty(a.due)).join('\n');
+  const value = JSON.stringify({ id: p.id, iso, r: ev.user });
+  const text = '📅 Move *' + p.Name + '*\'s ' + what + ' from *' + pretty(p['Day 0']) + '* to *' + pretty(iso) + '*?\nOn confirm I will update the tracker, set these back to Pending and tag the owners:\n' + (list || '• (no date-dependent steps)');
+  return postMessage({ channel: ev.channel, thread_ts, text, blocks: [
+    { type: 'section', text: { type: 'mrkdwn', text } },
+    { type: 'actions', elements: [
+      { type: 'button', style: 'primary', action_id: 'date_confirm', value, text: { type: 'plain_text', text: 'Confirm' } },
+      { type: 'button', action_id: 'date_cancel', value, text: { type: 'plain_text', text: 'Cancel' } } ] } ] });
+}
+
+async function dateButton(payload: any, a: any) {
+  const who = payload.user.id; const { id, iso, r } = JSON.parse(a.value || '{}');
+  const channel = payload.channel?.id, thread_ts = payload.message?.thread_ts || payload.message?.ts;
+  if (a.action_id === 'date_cancel') return respond(payload.response_url, { replace_original: true, text: '✖️ Date change cancelled by <@' + who + '>.' });
+  try {
+    const before = await getRow(id);
+    if (!before) throw new Error(id + ' is not in the tracker');
+    const oldIso = (await load()).people.find(x => x.id === id)?.['Day 0'] || '';
+    await setCell(id, 'Day 0', iso, 'moved in Slack by ' + who);
+    const row = (await getRow(id)) || { ...before, 'Day 0': iso };
+    const tab = /^L/i.test(id) ? 'Leavers' : 'Joiners';
+    // Same handling as an edit in the tracker: date-dependent steps back to Pending, alert in #people-ops-alerts
+    if (sheetOn() || !env('TRACKER_TOKEN')) await onTrackerChange({ tab, columns: ['Day 0'], oldValue: oldIso, value: row['Day 0'], row });
+    const d = await load(); const p = d.people.find(x => x.id === id)!;
+    const owners = affected(p, iso, d.steps);
+    const tags = owners.map(a => '• <@' + a.o.id + '> ' + (a.s.Confidential ? 'a confidential step' : '*' + a.s.Step + '*') + ' by ' + pretty(a.due)).join('\n');
+    await respond(payload.response_url, { replace_original: true, text: '✅ <@' + who + '> confirmed: *' + p.Name + '* now ' + (p.Flow === 'Joiner' ? 'starts' : 'leaves') + ' on *' + pretty(iso) + '* (tracker updated).' });
+    await postMessage({ channel, thread_ts, text: '📅 *' + p.Name + '*\'s ' + (p.Flow === 'Joiner' ? 'start date' : 'last day') + ' moved ' + pretty(oldIso) + ' → *' + pretty(iso) + '* (asked by <@' + r + '>). Please redo:\n' + (tags || '• nothing date-dependent') +
+      '\n<' + sheetLink(tab === 'Leavers' ? 'leavers.csv' : 'joiners.csv') + '|Open the tracker>' });
+  } catch (err: any) {
+    await respond(payload.response_url, { replace_original: false, text: '⚠️ Could not move the date: ' + err.message });
+  }
 }

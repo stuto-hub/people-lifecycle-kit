@@ -11,6 +11,7 @@ import { addDays, diffDays } from './core.js';
 import { CONFIG, env, trackerUrl } from './config.js';
 import { toObjects, setCellInCsv } from './csv.js';
 import type { Data, Person, Row, Step, StepStatus, Task } from './types.js';
+import { sheetOn, tabCsv, setSheetCell } from './sheets.js';
 
 export const FILES = { Joiners: 'joiners.csv', Leavers: 'leavers.csv', Steps: 'steps.csv', Guides: 'guides.csv', Questions: 'questions.csv', Handbook: 'handbook.md', Reminders: 'reminders.csv' } as const;
 export type Tab = keyof typeof FILES;
@@ -42,10 +43,36 @@ export async function load(): Promise<Data> {
   if (override) return override;
   const dir = path.join(process.cwd(), 'tracker');
   if (existsSync(path.join(dir, FILES.Joiners))) return fromTexts(readTexts(dir));
-  if (cache && Date.now() - cache.at < 60000) return cache.d;
-  const d = fromTexts(await fetchTexts());
+  if (cache && Date.now() - cache.at < (sheetOn() ? 10000 : 60000)) return cache.d;
+  const d = fromTexts(await loadTexts());
   cache = { at: Date.now(), d };
   return d;
+}
+
+/** Google Sheet mode: Joiners/Leavers (and any other tab that exists) come from the Sheet, the rest from GitHub. */
+export async function loadTexts(): Promise<Texts> {
+  const dir = path.join(process.cwd(), 'tracker');
+  if (!sheetOn()) return existsSync(path.join(dir, FILES.Joiners)) ? readTexts(dir) : fetchTexts();
+  const base = await fetchTexts();
+  await Promise.all((['Joiners', 'Leavers', 'Steps', 'Guides', 'Questions', 'Reminders'] as Tab[]).map(async tab => {
+    const csv = await tabCsv(tab);
+    if (csv !== null) base[tab] = csv;
+    else if (tab === 'Joiners' || tab === 'Leavers') throw new Error('the Sheet has no "' + tab + '" tab');
+  }));
+  return base;
+}
+
+/** One person's row as it is saved now (Sheet or CSV), headers as keys. */
+export async function getRow(personId: string): Promise<Row | null> {
+  if (override) {                                          // tests: rebuild the row from the in-memory data
+    const p = override.people.find(x => x.id === personId); if (!p) return null;
+    const row: Row = { ID: p.id, Name: p.Name, Country: p.Country, 'Worker type': p['Worker type'], 'Day 0': p['Day 0'], Status: p.Status,
+      'Added on': p['Added on'], POC: p.POC, 'Lead (Slack ID)': p['Lead (Slack ID)'], 'Buddy (Slack ID)': p['Buddy (Slack ID)'], Notes: p.Notes };
+    for (const s of override.steps.filter(x => x.Flow === p.Flow)) row[s.id + ' ' + s.Step] = (override.status[p.id + '::' + s.id] || { Status: 'Pending' }).Status;
+    return row;
+  }
+  const t = await loadTexts();
+  return toObjects(/^L/i.test(personId) ? t.Leavers : t.Joiners).find(r => r.ID === personId) || null;
 }
 
 async function fetchTexts(): Promise<Texts> {
@@ -125,6 +152,11 @@ export async function setCell(personId: string, column: string, value: string, n
     if (/^[JL]\d{2}$/.test(column)) override.status[personId + '::' + column] = { Status: value };
     else { const p = override.people.find(x => x.id === personId); if (p) (p as any)[column] = value; }
     return false;
+  }
+  if (sheetOn()) {                                        // the Google Sheet is the tracker
+    await setSheetCell(/^L/i.test(personId) ? 'Leavers' : 'Joiners', personId, column, value);
+    cache = null;
+    return true;
   }
   if (!env('TRACKER_TOKEN')) return false;
   const file = CONFIG.TRACKER_DIR + '/' + (/^L/i.test(personId) ? FILES.Leavers : FILES.Joiners);

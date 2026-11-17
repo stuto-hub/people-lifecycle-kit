@@ -12,7 +12,8 @@ export const CONFIG = {
   REPO: 'stuto-hub/people-lifecycle-kit',
   TRACKER_DIR: 'bot/tracker',            // joiners.csv, leavers.csv, steps.csv, guides.csv, questions.csv
   CHANNEL: 'C0CJ554MD3K',               // #people-ops-alerts (system alerts, digest)
-  REMINDERS: 'C0CJDTZKKGW',             // #reminders (5 / 3 / 0-day countdown, team tags)
+  REMINDERS: 'C0CJDTZKKGW',
+  SHEET_ID: '1vO4cMp3LzLubqaS2REIaQlAgW-IKepr32tOFenz7-A4',   // the Tracker Google Sheet (tabs Joiners, Leavers, ...)             // #reminders (5 / 3 / 0-day countdown, team tags)
   ROLES: {                              // role -> Slack member ID. Lead/Buddy are used when the tracker row has a placeholder.
     'People Ops': 'U0AGY9M1J8M', 'People Ops lead': 'U0AGY9M1J8M',
     'Hiring coordinator': 'U0CHNNQ8ZRV', 'IT': 'U0CHNNQ8ZRV', 'Finance': 'U0CHNNQ8ZRV', 'Admin': 'U0CHNNQ8ZRV',
