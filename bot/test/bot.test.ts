@@ -606,3 +606,34 @@ test('Self-serve leaving question gets the tools list and owners (not anyone\'s 
   assert.match(sys, /TOOLS AND ACCESS OWNERS/);
   assert.doesNotMatch(sys, /TRACKER \(live/);
 });
+
+test('Add a new joiner from Slack: preview -> Confirm adds the row with every step Pending', async () => {
+  const f = installFakes();
+  await mention('We have a new joiner starting on 1st jan 2027 as a full time in India, add them to the sheet, all other tasks are pending');
+  const preview = f.calls.slack.find(m => m.channel === 'C0REMIND' && m.blocks);
+  assert.match(preview.text, /Add a new \*joiner\*/);
+  assert.match(preview.text, /Starts: \*1 Jan 2027\*/);
+  assert.match(preview.text, /India, Employee/);
+  const before = f.data.people.length;
+  await POST(slackRequest({ payload: JSON.stringify({ type: 'block_actions', user: { id: CONFIG.ROLES['People Ops'] }, response_url: 'https://hooks.slack.test/r10',
+    channel: { id: 'C0REMIND' }, message: { ts: '15.0' }, actions: [{ action_id: 'add_confirm', value: preview.blocks[1].elements[0].value }] }) }, { json: false }));
+  await drain();
+  assert.equal(f.data.people.length, before + 1);
+  const p = f.data.people.at(-1)!;
+  assert.equal(p['Day 0'], '2027-01-01'); assert.equal(p.Country, 'India'); assert.equal(p['Worker type'], 'Employee'); assert.equal(p.Status, 'Active');
+  assert.match(f.calls.responses.at(-1).text, /added \*New joiner \(India, 1 Jan\)\*/);
+  assert.ok(f.calls.slack.some(m => m.thread_ts === '15.0' && /0 of 14 steps done/.test(m.text)), 'shows the full open list');
+});
+
+test('Add a new joiner: missing date or country -> asks for it, adds nothing', async () => {
+  const f = installFakes();
+  await mention('new joiner in India, add them to the sheet');
+  assert.ok(f.calls.slack.some(m => /I need the start date/.test(m.text)));
+});
+
+test('"new joiner" in a question is not an add request', async () => {
+  const f = installFakes();
+  await mention('who sends the welcome message to a new joiner?');
+  await mention('what does a new joiner do on day 0?');
+  assert.ok(!f.calls.slack.some(m => /Add a new \*joiner\*|To add a new/.test(m.text)));
+});
