@@ -25,6 +25,8 @@ export interface Data {
   people: Person[]; steps: Step[]; status: Record<string, StepStatus>; guides: Guide[]; questions: Question[];
   /** tracker/handbook.md: short fictional policy text the chat bot answers from */
   handbook?: string;
+  /** tracker/reminders.csv: countdown messages (Flow, Days before, Message with {@Role} tags) */
+  reminders?: Row[];
   /** true when read from the tracker CSVs: flow starts and date moves are then posted on change, not by the daily run */
   fromTracker?: boolean;
 }

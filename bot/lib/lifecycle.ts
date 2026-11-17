@@ -11,8 +11,8 @@
 import { addDays, diffDays, fill, pretty } from './core.js';
 import { CONFIG, isSlackId, todayIso } from './config.js';
 import { load, buildTasks, people as peopleOf, sheetLink } from './store.js';
-import { send } from './slack.js';
-import type { Guide, Msg, Person, Step, Task } from './types.js';
+import { send, slackGet } from './slack.js';
+import type { Guide, Msg, Person, Row, Step, Task } from './types.js';
 
 const isLive = (p: Person) => /active|test/i.test(p.Status || '');
 const hasTemplate = (p: Person) => CONFIG.TEMPLATES.includes(p.Country + '|' + p['Worker type']);
@@ -22,6 +22,7 @@ export function owner(role: string, person: Person): { id: string; note: string 
   const id = role === 'Lead' ? person['Lead (Slack ID)'] : role === 'Buddy' ? person['Buddy (Slack ID)']
     : role === 'Candidate' ? CONFIG.ROLES['People Ops'] : CONFIG.ROLES[role];
   if (isSlackId(id)) return { id, note: '' };
+  if (isSlackId(CONFIG.ROLES[role])) return { id: CONFIG.ROLES[role], note: '' };   // placeholder in the row: the role's default person
   return { id: CONFIG.FALLBACK_USER, note: '_(demo: would go to ' + (role === 'Candidate' ? 'People Ops, to chase the candidate by email' : role) + ')_ ' };
 }
 
@@ -70,6 +71,24 @@ export function planNudges(tasks: Task[], peopleById: Record<string, Person>, st
   }
 }
 
+// ---------------- countdown: 5 days, 3 days and day 0, in #reminders ----------------
+/**
+ * Anyone with a Day 0 in the tracker (not Cancelled or Done) gets a countdown post on the days listed in
+ * reminders.csv. {@Role} becomes a Slack tag for that role's owner, so each team sees its own task.
+ */
+export function countdown(people: Person[], reminders: Row[], today: string, out: Msg[]) {
+  for (const p of people) {
+    if (!p['Day 0'] || /cancel|done/i.test(p.Status || '')) continue;
+    const left = diffDays(p['Day 0'], today);
+    for (const r of reminders) {
+      if (r.Flow !== p.Flow || Number(r['Days before']) !== left) continue;
+      const text = fill(r.Message.replace(/\{@([^}]+)\}/g, (_, role) => '<@' + owner(role.trim(), p).id + '>'), {
+        name: p.Name, day0: pretty(p['Day 0']), shared_logins: p['Shared logins'] || 'none listed, please confirm with the lead' });
+      out.push({ to: CONFIG.REMINDERS, kind: 'countdown', text: text + ' <' + sheetLink(p.Flow === 'Joiner' ? 'joiners.csv' : 'leavers.csv') + '|Tracker>' });
+    }
+  }
+}
+
 // ---------------- digest ----------------
 export function digest(people: Person[], tasks: Task[], peopleById: Record<string, Person>, today: string, out: Msg[], guides: Guide[] = []) {
   const soon = people.filter(p => p['Day 0'] && isLive(p) && diffDays(p['Day 0'], today) >= 0 && diffDays(p['Day 0'], today) <= 14)
@@ -90,17 +109,29 @@ export function digest(people: Person[], tasks: Task[], peopleById: Record<strin
 }
 
 // ---------------- the morning run ----------------
-export async function dailyRun({ today = todayIso(), dryRun = false } = {}): Promise<Msg[]> {
+/** The evening backup run skips if the morning run already posted its ✅ heartbeat today, so nobody is nudged twice. */
+async function alreadyRan(today: string): Promise<boolean> {
+  try {
+    const j = await slackGet('conversations.history', { channel: CONFIG.CHANNEL, limit: '50' });
+    return !!(j && j.ok && (j.messages || []).some((m: any) => String(m.text || '').startsWith('✅ Lifecycle bot ran ' + pretty(today))));
+  } catch { return false; }
+}
+
+export async function dailyRun({ today = todayIso(), dryRun = false, force = false, only = '' } = {}): Promise<Msg[]> {
   const out: Msg[] = [];
+  if (!dryRun && !force && await alreadyRan(today)) { console.log('Already ran today (' + today + '); skipping the backup run.'); return out; }
   try {
     const d = await load();
     const people = peopleOf(d), tasks = buildTasks(d, today);
     const peopleById = Object.fromEntries(people.map(p => [p.id, p]));
     const stepsByName = Object.fromEntries(d.steps.map(s => [s.Step, s]));
     planNudges(tasks, peopleById, stepsByName, today, out);
+    countdown(people, d.reminders || [], today, out);
     digest(people, tasks, peopleById, today, out, d.guides);
+    const c = out.filter(m => m.kind === 'countdown').length;
     const n = out.filter(m => /nudge|overdue/.test(m.kind)).length, e = out.filter(m => /escalation|blocked/.test(m.kind)).length;
-    out.push({ to: CONFIG.CHANNEL, kind: 'heartbeat', text: '✅ Lifecycle bot ran ' + pretty(today) + ': ' + n + ' nudges, ' + e + ' escalations.' });
+    out.push({ to: CONFIG.CHANNEL, kind: 'heartbeat', text: '✅ Lifecycle bot ran ' + pretty(today) + ': ' + n + ' nudges, ' + e + ' escalations, ' + c + ' countdown reminders.' });
+    if (only) { const keep = out.filter(m => m.kind === only); out.length = 0; out.push(...keep); }
     if (dryRun) out.forEach(m => console.log('[preview] ' + m.kind + ' -> ' + m.to + ': ' + m.text.replace(/\n/g, ' ⏎ ')));
     else for (const m of out) await send(m);
     return out;

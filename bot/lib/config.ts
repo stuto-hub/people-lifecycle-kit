@@ -11,10 +11,12 @@ export const CONFIG = {
   TZ: 'Asia/Kolkata',
   REPO: 'stuto-hub/people-lifecycle-kit',
   TRACKER_DIR: 'bot/tracker',            // joiners.csv, leavers.csv, steps.csv, guides.csv, questions.csv
-  CHANNEL: 'C0CJ554MD3K',               // #people-ops-alerts
-  ROLES: {                              // role -> Slack member ID (demo: everyone is the same person)
+  CHANNEL: 'C0CJ554MD3K',               // #people-ops-alerts (system alerts, digest)
+  REMINDERS: 'C0CJDTZKKGW',             // #reminders (5 / 3 / 0-day countdown, team tags)
+  ROLES: {                              // role -> Slack member ID. Lead/Buddy are used when the tracker row has a placeholder.
     'People Ops': 'U0AGY9M1J8M', 'People Ops lead': 'U0AGY9M1J8M',
-    'Hiring coordinator': 'U0AGY9M1J8M', 'IT': 'U0AGY9M1J8M', 'Finance': 'U0AGY9M1J8M'
+    'Hiring coordinator': 'U0CHNNQ8ZRV', 'IT': 'U0CHNNQ8ZRV', 'Finance': 'U0CHNNQ8ZRV', 'Admin': 'U0CHNNQ8ZRV',
+    'Lead': 'U0CHNNQ8ZRV', 'Buddy': 'U0CHNNQ8ZRV'
   } as Record<string, string>,
   FALLBACK_USER: 'U0AGY9M1J8M',        // used when a Lead/Buddy ID in the tracker is a placeholder
   TEMPLATES: ['Spain|Contractor', 'Brazil|Employee', 'India|Contractor', 'United States|Contractor'],
@@ -25,7 +27,7 @@ export const CONFIG = {
 /** The Google Sheet that mirrors the CSVs (IMPORTDATA tabs), so people open a real sheet. GitHub stays the source of truth. */
 export const SHEET = 'https://docs.google.com/spreadsheets/d/1vO4cMp3LzLubqaS2REIaQlAgW-IKepr32tOFenz7-A4/edit';
 const SHEET_TABS: Record<string, string> = { 'joiners.csv': '670692284', 'leavers.csv': '883283007', 'steps.csv': '1778770704', 'questions.csv': '823496685', 'guides.csv': '1601903721' };
-export const trackerUrl = (file = '') => SHEET + '#gid=' + SHEET_TABS[file || 'joiners.csv'];
+export const trackerUrl = (file = '') => SHEET + '#gid=' + (SHEET_TABS[file] || SHEET_TABS['joiners.csv']);
 /** Where an edit actually happens (the CSV in GitHub). */
 export const trackerEditUrl = (file = '') => 'https://github.com/' + CONFIG.REPO + '/edit/main/' + CONFIG.TRACKER_DIR + '/' + (file || 'joiners.csv');
 export const env = (k: string) => process.env[k] || '';
