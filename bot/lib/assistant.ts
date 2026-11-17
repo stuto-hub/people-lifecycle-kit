@@ -11,6 +11,7 @@ import { CONFIG, env, todayIso } from './config.js';
 import { load, setCell, sheetLink, buildTasks, people as peopleOf, getRow, stepIdOf } from './store.js';
 import { onTrackerChange } from './tracker-events.js';
 import { sheetOn } from './sheets.js';
+import { pollSheet } from './sheet-sync.js';
 import { addDays } from './core.js';
 import { owner } from './lifecycle.js';
 import { pretty, diffDays } from './core.js';
@@ -128,6 +129,9 @@ export function findPerson(text: string, people: Person[]): Person | undefined {
   const id = (text.match(/\b([JL]-\d{3})\b/i) || [])[1];
   if (id) return people.find(p => p.id.toLowerCase() === id.toLowerCase());
   const t = text.toLowerCase();
+  const full = people.find(p => { const n = p.Name.toLowerCase(), short = n.replace(/\(.*?\)/g, '').trim();
+    return t.includes(n) || (short.length > 4 && t.includes(short)); });    // "TEST fake joiner", "Demo joiner (Spain)"
+  if (full) return full;
   return people.find(p => (p.Name + ' ' + p.Country).toLowerCase().split(/[^a-z]+/).some(w => w.length > 3 && !NOISE.has(w) && new RegExp('\\b' + w + '\\b').test(t)));
 }
 
@@ -163,6 +167,10 @@ export async function answerChat(ev: SlackEvent) {
   if (!dateAsk && ev.thread_ts && parseDate(question, todayIso())) {      // "this is the new date 14/1/2026" in the same thread
     const earlier = (await history(ev)).filter(m => m.role === 'user').map(m => m.content).join(' ');
     if (DATE_CHANGE.test(earlier)) dateAsk = earlier + ' ' + question;
+  }
+  if (REASSIGN.test(question)) {                     // "I changed X's date on the tracker, re-assign and tag them"
+    const p = findPerson(question, peopleOf(await load()));
+    if (p && !(DATE_CHANGE.test(question) && parseDate(question, todayIso()))) return reassign(ev, p, thread_ts);
   }
   if (dateAsk) {
     const p = findPerson(dateAsk, peopleOf(await load()));
@@ -313,4 +321,30 @@ async function dateButton(payload: any, a: any) {
   } catch (err: any) {
     await respond(payload.response_url, { replace_original: false, text: '⚠️ Could not move the date: ' + err.message });
   }
+}
+
+// ---------------- "I changed X on the tracker, re-assign and tag them" ----------------
+const REASSIGN = /\b(re-?assign|reassign|assign (the )?tasks|tag (them|the owners|owners|people|everyone|the team)|notify (them|the owners|owners|everyone)|(changed|updated|edited|moved) .*\b(tracker|sheet)\b|(tracker|sheet)\b.*\b(changed|updated|edited))/i;
+
+/** Applies any Sheet edit right away (no waiting for the 5-minute check), then tags each owner with their task and due date in this thread. */
+export async function reassign(ev: SlackEvent, who: Person, thread_ts?: string) {
+  let applied: string[] = [];
+  if (sheetOn()) { try { applied = (await pollSheet()).filter(l => /->|new row/.test(l)); } catch (err: any) { console.error('reassign poll:', err.message); } }
+  const d = await load(); const today = todayIso();
+  const p = d.people.find(x => x.id === who.id) || who;
+  const open = buildTasks(d, today).filter(t => t.Person[0] === p.id && t.Status !== 'Done').sort((a, b) => a.Due.localeCompare(b.Due));
+  const what = p.Flow === 'Joiner' ? 'starts' : 'leaves';
+  if (!open.length) return postMessage({ channel: ev.channel, thread_ts, text: '✅ *' + p.Name + '* ' + what + ' on *' + pretty(p['Day 0']) + '* and every step is already done.' });
+  const lines = open.slice(0, 10).map(t => {
+    const o = owner(t['Owner role'], p); const late = diffDays(today, t.Due);
+    return '• <@' + o.id + '> ' + (t.Confidential ? 'a confidential step' : '*' + t.Step + '*') + ' by ' + pretty(t.Due) + (late > 0 ? ' (⏰ ' + late + 'd overdue)' : '') + (t.Status === 'Blocked' ? ' ⛔ blocked' : '');
+  });
+  for (const t of open.slice(0, 10)) {
+    const o = owner(t['Owner role'], p);
+    await send({ to: o.id, kind: 'nudge', taskId: t._id, url: t._url, confidential: t.Confidential,
+      text: '📅 *' + p.Name + '* ' + what + ' on ' + pretty(p['Day 0']) + '. Your task: ' + (t.Confidential ? 'a confidential step' : '*' + t.Step + '*') + ', due ' + pretty(t.Due) + '.' });
+  }
+  const note = applied.length ? '\n_I picked up your tracker edit just now (' + applied.length + ' change' + (applied.length > 1 ? 's' : '') + ') and reset the date-dependent steps._' : '';
+  return postMessage({ channel: ev.channel, thread_ts, text: '📅 *' + p.Name + '* ' + what + ' on *' + pretty(p['Day 0']) + '*. Here is who does what:\n' + lines.join('\n') +
+    (open.length > 10 ? '\n…and ' + (open.length - 10) + ' later steps.' : '') + note + '\nEach of you also has a DM with a *Mark done* button. <' + sheetLink(p.Flow === 'Joiner' ? 'joiners.csv' : 'leavers.csv') + '|Open the tracker>' });
 }
