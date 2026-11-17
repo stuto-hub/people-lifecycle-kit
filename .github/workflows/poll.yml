@@ -1,0 +1,17 @@
+name: Sheet watcher
+
+# Every 5 minutes: asks the bot to look for edits typed into the Google Sheet.
+# The bot runs on Vercel (where the Google key lives); this only knocks on the door.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency: sheet-poll
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - run: curl -fsS --max-time 90 "https://people-lifecycle-kit-bot.vercel.app/api/cron?job=poll"

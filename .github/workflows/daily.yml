@@ -3,7 +3,7 @@ name: Daily lifecycle run
 on:
   schedule:
     - cron: '30 3 * * *'        # 03:30 UTC = 09:00 IST
-    - cron: '30 15 * * *'       # 15:30 UTC = 21:00 IST backup, in case GitHub skips the morning run
+    - cron: '30 15 * * *'       # 15:30 UTC = 21:00 IST backup (skipped if the morning run already went out)
   workflow_dispatch:            # "Run workflow" button in the Actions tab
     inputs:
       mode:
@@ -18,23 +18,17 @@ on:
 
 concurrency: lifecycle-run
 
+# The bot runs on Vercel (it reads the Google Sheet there); GitHub only provides the clock.
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: bot
+    timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install --no-audit --no-fund
       - name: Run the bot
-        run: npx tsx scripts/daily.ts "$MODE"
+        run: |
+          curl -fsS --max-time 90 "https://people-lifecycle-kit-bot.vercel.app/api/cron?job=${MODE}&today=${TODAY}&force=${FORCE}&key=${KEY}"
         env:
           MODE: ${{ inputs.mode || 'daily' }}
           TODAY: ${{ inputs.today }}
           FORCE: ${{ github.event_name == 'workflow_dispatch' }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          KEY: ${{ secrets.CRON_SECRET }}
