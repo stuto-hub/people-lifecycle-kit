@@ -1,0 +1,24 @@
+ID,Step,Flow,Offset (days),Owner role,Critical,Human moment,Confidential,Recheck if day 0 moves,Nudge text
+J01,Send agreement (country template),Joiner,-14,Hiring coordinator,,,,Yes,Send {name}'s {worker_type} agreement for {country} today. Template: {template}. Start date in the agreement must be {day0}.
+J02,Agreement signed,Joiner,-10,Candidate,Yes,,,Yes,{name} hasn't signed yet. Chase by email today; agreement must be signed before accounts are created.
+J03,Collect payment details in payments platform,Joiner,-7,People Ops,,,Yes,,Collect {name}'s payment details in the payments platform. Keep this out of public channels.
+J04,Order laptop (deliver 2 days before start),Joiner,-7,People Ops,,,,Yes,"Order {name}'s laptop for delivery by {deliver_by} ({country}). If the start date moves, update the order."
+J05,Create Google Workspace / Slack / Notion accounts,Joiner,-3,IT,Yes,,,,"Create {name}'s Google Workspace, Slack and Notion accounts. Start date {day0}."
+J06,Assign security training,Joiner,-3,IT,,,,,Assign security training to {name} so it's ready on day 0.
+J07,Write a personal welcome message,Joiner,-1,Lead,,Yes,,Yes,"{name} starts tomorrow. Please write them a personal welcome. This one is yours, no template."
+J08,Buddy intro,Joiner,0,Buddy,,Yes,,,{name} starts today. Say hello and book a 20-minute intro this week.
+J09,Onboarding call,Joiner,0,People Ops,,Yes,,,Run {name}'s onboarding call today and add them to the cohort channel.
+J10,Check who is stuck on tool onboarding,Joiner,5,People Ops,,,,,Day 5 for {name}: check tool onboarding is complete and nothing is blocked.
+J11,Week 1 check-in,Joiner,7,Lead,,Yes,,,Week 1 check-in with {name} is due today.
+J12,Week 2 check-in,Joiner,14,Buddy,,Yes,,,Week 2 buddy check-in with {name} is due today.
+J13,Day 30 check-in,Joiner,30,Lead,,Yes,,,Day 30 check-in with {name} is due today.
+J14,Graduation from onboarding programme,Joiner,60,People Ops,,,,,{name} reaches day 60 today. Confirm graduation and close the onboarding record.
+L01,Book exit call,Leaver,-7,People Ops,,Yes,Yes,,Book an exit call with {name} (last day {day0}). This stays a human conversation.
+L02,Name handover owner,Leaver,-7,Lead,,,,,Name who takes over {name}'s work and share the handover doc.
+L03,Prepare asset and access list incl. shared logins,Leaver,-3,IT,Yes,,,,Prepare {name}'s asset and access list. Shared logins on record: {shared_logins}.
+L04,Rotate shared passwords and transfer file ownership,Leaver,-1,IT,Yes,,,,Rotate shared passwords ({shared_logins}) and move ownership of {name}'s Drive and Notion files to the handover owner.
+L05,Remove access (Slack / email / Notion / tools) by end of day,Leaver,0,IT,Yes,,,,"Today is {name}'s last day. Remove Slack, Google, Notion and tool access by end of day and mark done."
+L06,Calculate final payment,Leaver,0,People Ops,Yes,,Yes,,Calculate {name}'s final payment. Confidential: do not discuss in public channels.
+L07,Send exit survey,Leaver,1,People Ops,,,,,Send {name} the exit survey (personal email).
+L08,Follow up on exit survey if no reply,Leaver,4,People Ops,,,,,"No exit survey reply from {name} yet? Send one friendly follow-up, then close."
+L09,Confirm laptop returned,Leaver,7,People Ops,,,,,Confirm {name}'s laptop has been returned or collected.
