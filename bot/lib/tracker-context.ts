@@ -21,7 +21,7 @@ export function nameToTag(name: string): string {
 }
 
 /** Words that mean the question is about people in the tracker or the joining / leaving process. */
-const TRACKER = /\b(pending|done|completed?|status|progress|left to do|what's left|whats left|ordered|order(ed)? the laptop|laptop (sent|shipped|ordered|ready)|revok\w*|access(es)?|remove[ds]? access|owner|owns|responsible|who (does|handles|sends|writes)|joining|joiner|joiners|starts?|starting|leaver|leavers|leaving|exit\w*|offboard\w*|onboard\w*|day 0|day one|day 1|first day|last day|welcome (msg|message)|buddy|tracker|sheet|next (week|month)|this (week|month)|tools?|poc)\b/i;
+const TRACKER = /\b(pending|done|completed?|status|progress|left to do|what's left|whats left|ordered|order(ed)? the laptop|laptop (sent|shipped|ordered|ready)|revok\w*|access(es)?|remove[ds]? access|owner|owns|responsible|who (does|handles|sends|writes)|joining|joiner|joiners|starts?|starting|leaver|leavers|leaving|exit\w*|offboard\w*|onboard\w*|day 0|day one|day 1|first day|last day|welcome (msg|message)|buddy|tracker|sheet|tools?|poc)\b/i;
 export const isTrackerQuestion = (q: string) => TRACKER.test(q);
 
 function personBlock(d: Data, p: Person, today: string, inPrivate: boolean): string {

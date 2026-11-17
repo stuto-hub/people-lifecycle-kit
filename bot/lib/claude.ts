@@ -15,6 +15,7 @@ export const SYSTEM_PROMPT = [
   '- Pay, invoices, health, legal, performance and leaving are confidential: keep it general, point to the owner, suggest a private DM, and never ask for personal details in Slack.',
   '- You can see the joining/leaving tracker (TRACKER block, when present) but no other personal records; never guess about people.',
   '- You inform; humans decide. Never promise approvals, pay or outcomes.',
+  '- Short follow-ups ("and for employees?", "what about Spain?") continue the topic of the earlier messages: answer about that same topic.',
   '- Only mention follow-up actions listed under ACTIONS TAKEN. Never say someone was told or something was logged unless it is listed there.',
   '- Style: friendly, plain English, Slack formatting (*bold*, bullets), at most 6 short lines unless the tracker rules allow more.'
 ].join('\n');
@@ -31,7 +32,9 @@ export function knowledgeBlock(kb: Knowledge, r: Match, today = todayIso()): str
   }).join('\n');
   const qa = kb.intents.map(i => '- Topic keywords: ' + i.keywords.replace(/\|/g, ', ') + ' | guide: ' + (i.guide_id || 'none yet') +
     ' | answer: ' + i.answer + (i.sensitive === 'Y' ? ' | confidential' : '')).join('\n');
-  const hint = r.matched === 'GAP' ? 'Best rule-based match: none (this is a gap).' : 'Best rule-based match: ' + r.text.replace(/\n/g, ' ');
+  const hint = r.matched === 'GAP' ? 'Best rule-based match: none (this is a gap).'
+    : r.matched === 'FOLLOW_UP' || r.matched === 'TRACKER' ? 'Best rule-based match: not used (a follow-up or tracker question: use the conversation and the blocks below).'
+    : 'Best rule-based match: ' + r.text.replace(/\n/g, ' ');
   const handbook = kb.handbook ? '\nHandbook (the policy details; quote from here):\n' + kb.handbook.slice(0, 12000) + '\n' : '';
   return 'KNOWLEDGE\nGuides:\n' + guides + '\nKnown questions:\n' + qa + '\n' + handbook + '\n' + hint + '\n\nACTIONS TAKEN (for this message, just now)\n' + actionsTaken(r);
 }

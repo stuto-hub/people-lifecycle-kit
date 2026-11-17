@@ -200,14 +200,17 @@ export async function answerChat(ev: SlackEvent) {
     const context = question + ' ' + past.filter(t => t.role === 'user').map(t => t.content).join(' ');
     let d = await load();
     const named = findPerson(question, peopleOf(d)) || findPerson(context, peopleOf(d));
-    const trackerAsk = !!named || (isTrackerQuestion(context) && !PERSONAL.test(question));
+    const trackerAsk = !!named || (isTrackerQuestion(question) && !PERSONAL.test(question)) ||
+      (!!past.length && FOLLOWUP.test(question) && isTrackerQuestion(context) && !PERSONAL.test(context));
     let tracker = '';
     if (trackerAsk && canSeeTracker(ev.user)) {
       if (sheetOn() && hasRepeatedIds(d)) { await pollSheet(); d = await load(); }      // give a copied row its own ID first
       tracker = trackerBlock(d, todayIso(), ev.channel.startsWith('D'));
     }
     // A follow-up ("and in Spain?") or a tracker question is not a guide gap.
-    const r = tracker ? { ...m, matched: 'TRACKER', action: '' } : past.length && m.matched === 'GAP' ? { ...m, matched: 'FOLLOW_UP', action: '' } : m;
+    // In a thread, a short follow-up ("and for employees in Brazil?") belongs to the earlier topic, not to whatever keyword it matches.
+    const followUp = past.length && (m.matched === 'GAP' || FOLLOWUP.test(question));
+    const r = tracker ? { ...m, matched: 'TRACKER', action: '' } : followUp ? { ...m, matched: 'FOLLOW_UP', action: '' } : m;
     answer = await askClaude(question, kb, r, past, tracker || toolsBlock(d));
     await routeActions(r, ev.user, question, via);
   } catch (err: any) {
@@ -466,3 +469,6 @@ async function addButton(payload: any, a: any) {
     await respond(payload.response_url, { replace_original: false, text: '⚠️ Could not add them: ' + err.message });
   }
 }
+
+/** Messages that only make sense with the earlier ones: "and for employees?", "what about Spain?", "who owns it?". */
+const FOLLOWUP = { test: (q: string) => q.split(/\s+/).filter(Boolean).length <= 8 || /^(and|what about|how about|also|then|so|but|ok|okay)\b/i.test(q.trim()) };
