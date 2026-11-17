@@ -176,6 +176,21 @@ test('Preview mode sends nothing; the real tracker runs cleanly', async () => {
   assert.ok(out.some(m => m.kind === 'digest') && out.some(m => m.kind === 'blocked'));
 });
 
+test('The Vercel bot reads the latest tracker from GitHub when no local copy exists', async () => {
+  const csv = stringifyCsv([['ID', 'Name', 'Day 0', 'Status', 'J01 Send agreement (country template)'], ['J-1', 'Remote joiner', '2026-11-30', 'Active', 'Done']]);
+  const f = installFakes({ csv });
+  setData(null);
+  process.env.TRACKER_TOKEN = 'test';
+  const cwd = process.cwd();
+  process.chdir('/tmp');
+  try {
+    const { load } = await import('../lib/store.js');
+    const d = await load();
+    assert.equal(d.people.find(p => p.id === 'J-1')!.Name, 'Remote joiner');
+    assert.ok(f.calls.github.every(c => c.method === 'GET'));
+  } finally { process.chdir(cwd); }
+});
+
 test('Mark done writes Done into the tracker as a GitHub commit', async () => {
   const csv = stringifyCsv([['ID', 'Name', 'J04 Order laptop'], ['J-102', 'Demo joiner (Spain)', 'Pending']]);
   const f = installFakes({ csv });
