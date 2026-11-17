@@ -1,0 +1,7 @@
+Flow,Days before,Message
+Joiner,5,"📦 *{name}* joins on {day0} (in 5 days). {@IT} please keep their laptop ready to dispatch today, so it arrives 2 days before day 0."
+Joiner,3,"🤝 *{name}* joins in 3 days ({day0}). {@Buddy} you're their buddy: block 20 minutes on day 0 for a hello call. {@Lead} please share their first-week plan."
+Joiner,0,"🎉 *{name}* joins today! {@Lead} please introduce them in #introductions. {@Buddy} say hi and check they can log in. {@People Ops} welcome call today."
+Leaver,5,"📋 *{name}*'s last day is {day0} (in 5 days). {@Lead} please agree a handover owner and doc. {@People Ops} book the exit call."
+Leaver,3,"🔐 *{name}* leaves in 3 days ({day0}). {@IT} prepare the access-removal list and the shared logins to rotate: {shared_logins}. {@Finance} prepare the final payment (details by DM, not here)."
+Leaver,0,"👋 Today is *{name}*'s last day. {@IT} remove access at end of day and send the laptop return label. {@Lead} a thank-you note in the team channel goes a long way. {@People Ops} confirm the exit call is done."
