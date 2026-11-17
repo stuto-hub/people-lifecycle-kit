@@ -343,3 +343,84 @@ test('Update request: "any update on the Kenya joiner?" tags the owners of open 
   assert.match(reply.text, new RegExp('<@' + CONFIG.ROLES['Hiring coordinator'] + '>'));
   assert.ok(f.calls.slack.some(m => m.channel === CONFIG.ROLES['Hiring coordinator'] && m.blocks && /asked for an update/.test(m.text)));
 });
+
+// ---------------- date change from Slack + the Google Sheet as tracker ----------------
+import { parseDate } from '../lib/assistant.js';
+import { pollSheet } from '../lib/sheet-sync.js';
+
+test('Dates: "4 Dec", "Dec 4th", "2026-12-04" and "4 January" (next year) are understood', () => {
+  assert.equal(parseDate("Priya's start date moves to 4 Dec", '2026-11-17'), '2026-12-04');
+  assert.equal(parseDate('last day is now Dec 4th', '2026-11-17'), '2026-12-04');
+  assert.equal(parseDate('day 0 to 2026-12-04', '2026-11-17'), '2026-12-04');
+  assert.equal(parseDate('start date moves to 4 January', '2026-11-17'), '2027-01-04');
+  assert.equal(parseDate('start date moves soon', '2026-11-17'), '');
+});
+
+test('Date change in Slack: preview with Confirm; on confirm the tracker moves, steps reset, owners tagged', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-102', Name: 'Demo joiner (Spain)', Country: 'Spain', 'Day 0': '2026-11-27', J01: 'Done', J04: 'Done', J03: 'Done' })] });
+  await POST(slackRequest({ type: 'event_callback', event_id: 'E70', authorizations: [{ user_id: 'U0BOT' }], event: { type: 'app_mention',
+    channel: 'C0REMIND', user: 'U0ASKER01', ts: '8.1', text: "<@U0BOT> the Spain joiner's start date moves to 4 Dec" } }));
+  await drain();
+  const preview = f.calls.slack.find(m => m.channel === 'C0REMIND');
+  assert.match(preview.text, /Move \*Demo joiner \(Spain\)\*'s start date from \*27 Nov\* to \*4 Dec\*/);
+  assert.equal(f.data.people[0]['Day 0'], '2026-11-27', 'nothing changes before Confirm');
+  const value = preview.blocks[1].elements[0].value;
+  await POST(slackRequest({ payload: JSON.stringify({ type: 'block_actions', user: { id: 'U0ASKER01' }, response_url: 'https://hooks.slack.test/r4',
+    channel: { id: 'C0REMIND' }, message: { ts: '9.0', thread_ts: '8.1' }, actions: [{ action_id: 'date_confirm', value }] }) }, { json: false }));
+  await drain();
+  assert.equal(f.data.people[0]['Day 0'], '2026-12-04');
+  assert.equal(f.data.status['J-102::J01'].Status, 'Pending', 'agreement reopened');
+  assert.equal(f.data.status['J-102::J04'].Status, 'Pending', 'laptop reopened');
+  assert.equal(f.data.status['J-102::J03'].Status, 'Done', 'payment details not date-dependent');
+  assert.match(f.calls.responses.at(-1).text, /confirmed: \*Demo joiner \(Spain\)\* now starts on \*4 Dec\*/);
+  const tags = f.calls.slack.find(m => m.thread_ts === '8.1' && /Please redo/.test(m.text));
+  assert.match(tags.text, new RegExp('<@' + CONFIG.ROLES['People Ops'] + '> \\*Order laptop'));
+});
+
+test('Google Sheet: edits typed in the Sheet are spotted and handled once; the bot writes cells back', async () => {
+  const f = installFakes();
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  process.env.GOOGLE_SA_KEY = JSON.stringify({ client_email: 'bot@x.iam.gserviceaccount.com', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) });
+  setData(null);
+  const steps = fromTexts(readTexts()).steps.filter(s => s.Flow === 'Joiner');
+  const head = ['ID', 'Name', 'Country', 'Worker type', 'Day 0', 'Status', 'Added on', 'POC', 'Lead (Slack ID)', 'Buddy (Slack ID)', 'Notes', ...steps.map(s => s.id + ' ' + s.Step)];
+  const row = (status: string) => ['J-201', 'Sheet joiner', 'India', 'Contractor', '11/30/2026', status, '', 'People Ops', '', '', '', ...steps.map(() => 'Pending')];
+  const tabs: Record<string, string[][]> = { Joiners: [head, row('Not started')], Leavers: [['ID', 'Name']] };
+  const fakeFetch = (globalThis as any).fetch;
+  (globalThis as any).fetch = async (url: string | URL, opts: RequestInit = {}) => {
+    const u = String(url);
+    if (u === 'https://oauth2.googleapis.com/token') return new Response(JSON.stringify({ access_token: 'tok' }));
+    if (!u.startsWith('https://sheets.googleapis.com/')) return fakeFetch(url, opts);
+    const body = opts.body ? JSON.parse(String(opts.body)) : {};
+    const path = decodeURIComponent(u.split('/spreadsheets/')[1].replace(/^[^/?:]+/, ''));
+    if (path.startsWith('?fields')) return new Response(JSON.stringify({ sheets: Object.keys(tabs).map(title => ({ properties: { title } })) }));
+    if (path.startsWith(':batchUpdate')) { tabs[body.requests[0].addSheet.properties.title] = []; return new Response('{}'); }
+    const m = path.match(/^\/values\/'([^']+)'(?:!([A-Z]+)(\d+))?(:clear)?/)!;
+    const tab = m[1];
+    if (!(tab in tabs)) return new Response(JSON.stringify({ error: { message: 'Unable to parse range: ' + tab } }), { status: 400 });
+    if (m[4]) { tabs[tab] = []; return new Response('{}'); }
+    if ((opts.method || 'GET') === 'GET') {
+      if (!m[2]) return new Response(JSON.stringify({ values: tabs[tab] }));
+      const c = m[2].charCodeAt(0) - 65, r = Number(m[3]) - 1;
+      return new Response(JSON.stringify({ values: [[(tabs[tab][r] || [])[c] || '']] }));
+    }
+    if (!m[2] || (m[2] === 'A' && m[3] === '1' && body.values.length > 1)) { tabs[tab] = body.values.map((x: string[]) => [...x]); return new Response('{}'); }
+    const c = m[2].length === 1 ? m[2].charCodeAt(0) - 65 : (m[2].charCodeAt(0) - 64) * 26 + m[2].charCodeAt(1) - 65, r = Number(m[3]) - 1;
+    (tabs[tab][r] ||= [])[c] = body.values[0][0];
+    return new Response('{}');
+  };
+  try {
+    assert.match((await pollSheet(T)).join(' '), /first run, snapshot created/);
+    tabs.Joiners[1][5] = 'Active';                                   // someone types Active in the Sheet
+    const log = await pollSheet(T);
+    assert.match(log.join(' '), /J-201: Status "Not started" -> "Active"/);
+    assert.ok(f.calls.slack.some(m => /flow started for \*Sheet joiner\*/.test(m.text)));
+    assert.equal(tabs.Joiners[1][6], T, 'Added on written back into the Sheet');
+    const before = f.calls.slack.length;
+    assert.match((await pollSheet(T)).join(' '), /Joiners: no changes/);
+    assert.equal(f.calls.slack.length, before, 'handled once, not again on the next poll');
+    assert.ok(await setCell('J-201', 'J01', 'Done'));
+    assert.equal(tabs.Joiners[1][head.findIndex(h => h.startsWith('J01'))], 'Done');
+    assert.match((await pollSheet(T)).join(' '), /Joiners: no changes/, "the bot's own writes are not mistaken for edits");
+  } finally { delete process.env.GOOGLE_SA_KEY; (globalThis as any).fetch = fakeFetch; }
+});
