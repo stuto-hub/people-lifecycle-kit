@@ -22,7 +22,12 @@ export const CONFIG = {
   CLAUDE_MODEL: 'claude-haiku-5-5'      // fastest; switch to 'claude-sonnet-5-5' for richer answers
 };
 
-export const trackerUrl = (file = '') => 'https://github.com/' + CONFIG.REPO + '/blob/main/' + CONFIG.TRACKER_DIR + '/' + (file || 'joiners.csv');
+/** The Google Sheet that mirrors the CSVs (IMPORTDATA tabs), so people open a real sheet. GitHub stays the source of truth. */
+export const SHEET = 'https://docs.google.com/spreadsheets/d/1vO4cMp3LzLubqaS2REIaQlAgW-IKepr32tOFenz7-A4/edit';
+const SHEET_TABS: Record<string, string> = { 'joiners.csv': '670692284', 'leavers.csv': '883283007', 'steps.csv': '1778770704', 'questions.csv': '823496685', 'guides.csv': '1601903721' };
+export const trackerUrl = (file = '') => SHEET + '#gid=' + SHEET_TABS[file || 'joiners.csv'];
+/** Where an edit actually happens (the CSV in GitHub). */
+export const trackerEditUrl = (file = '') => 'https://github.com/' + CONFIG.REPO + '/edit/main/' + CONFIG.TRACKER_DIR + '/' + (file || 'joiners.csv');
 export const env = (k: string) => process.env[k] || '';
 export const isSlackId = (id: unknown) => /^[UWC][A-Z0-9]{6,}$/.test(String(id || ''));
 
