@@ -17,7 +17,7 @@ export const SYSTEM_PROMPT = [
   '- Style: friendly, plain English, Slack formatting (*bold*, bullets), at most 6 short lines.'
 ].join('\n');
 
-export interface Knowledge { guides: GuideRef[]; intents: Intent[] }
+export interface Knowledge { guides: GuideRef[]; intents: Intent[]; handbook?: string }
 export interface Turn { role: 'user' | 'assistant'; content: string }
 
 /** Turns the tracker's guides and questions into the context block Claude answers from. */
@@ -30,7 +30,8 @@ export function knowledgeBlock(kb: Knowledge, r: Match, today = todayIso()): str
   const qa = kb.intents.map(i => '- Topic keywords: ' + i.keywords.replace(/\|/g, ', ') + ' | guide: ' + (i.guide_id || 'none yet') +
     ' | answer: ' + i.answer + (i.sensitive === 'Y' ? ' | confidential' : '')).join('\n');
   const hint = r.matched === 'GAP' ? 'Best rule-based match: none (this is a gap).' : 'Best rule-based match: ' + r.text.replace(/\n/g, ' ');
-  return 'KNOWLEDGE\nGuides:\n' + guides + '\nKnown questions:\n' + qa + '\n\n' + hint + '\n\nACTIONS TAKEN\n' + actionsTaken(r);
+  const handbook = kb.handbook ? '\nHandbook (the policy details; quote from here):\n' + kb.handbook.slice(0, 12000) + '\n' : '';
+  return 'KNOWLEDGE\nGuides:\n' + guides + '\nKnown questions:\n' + qa + '\n' + handbook + '\n' + hint + '\n\nACTIONS TAKEN (for this message, just now)\n' + actionsTaken(r);
 }
 
 /** What the bot actually does after answering, so Claude describes it truthfully. */

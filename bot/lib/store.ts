@@ -12,7 +12,7 @@ import { CONFIG, env, trackerUrl } from './config.js';
 import { toObjects, setCellInCsv } from './csv.js';
 import type { Data, Person, Row, Step, StepStatus, Task } from './types.js';
 
-export const FILES = { Joiners: 'joiners.csv', Leavers: 'leavers.csv', Steps: 'steps.csv', Guides: 'guides.csv', Questions: 'questions.csv' } as const;
+export const FILES = { Joiners: 'joiners.csv', Leavers: 'leavers.csv', Steps: 'steps.csv', Guides: 'guides.csv', Questions: 'questions.csv', Handbook: 'handbook.md' } as const;
 export type Tab = keyof typeof FILES;
 export type Texts = Record<Tab, string>;
 
@@ -27,7 +27,7 @@ const gh = (p: string, init: RequestInit = {}) => fetch('https://api.github.com/
 // ---------------- reading ----------------
 export function readTexts(dir = path.join(process.cwd(), 'tracker')): Texts {
   const out = {} as Texts;
-  for (const [tab, file] of Object.entries(FILES)) out[tab as Tab] = readFileSync(path.join(dir, file), 'utf8');
+  for (const [tab, file] of Object.entries(FILES)) out[tab as Tab] = existsSync(path.join(dir, file)) ? readFileSync(path.join(dir, file), 'utf8') : '';
   return out;
 }
 
@@ -54,12 +54,13 @@ async function fetchTexts(): Promise<Texts> {
     let text: string;
     if (env('TRACKER_TOKEN')) {                              // fresh, authenticated
       const j: any = await (await gh(p + '?ref=main')).json();
+      if (!j.content && tab === 'Handbook') { out[tab] = ''; return; }
       if (!j.content) throw new Error('could not read tracker ' + file + ' (' + (j.message || 'no content') + ')');
       text = Buffer.from(j.content, 'base64').toString('utf8');
     } else {                                                 // public raw file (GitHub caches it for a few minutes)
       const r = await fetch('https://raw.githubusercontent.com/' + CONFIG.REPO + '/main/' + p);
-      if (!r.ok) throw new Error('could not read tracker ' + file + ' (' + r.status + ')');
-      text = await r.text();
+      if (!r.ok && tab !== 'Handbook') throw new Error('could not read tracker ' + file + ' (' + r.status + ')');
+      text = r.ok ? await r.text() : '';
     }
     out[tab as Tab] = text;
   }));
@@ -108,7 +109,7 @@ export function fromTexts(t: Texts): Data {
   const guides = toObjects(t.Guides).filter(g => g.Guide).map(g => ({ Guide: g.Guide, Owner: g.Owner, 'Last reviewed': normDate(g['Last reviewed']), Link: g.Link }));
   const questions = toObjects(t.Questions).filter(q => q.Question).map(q => ({ Question: q.Question, Guide: q.Guide, Keywords: q.Keywords,
     Answer: q.Answer, Action: q.Action, Confidential: yes(q.Confidential) }));
-  return { people, steps, status, guides, questions, fromTracker: true };
+  return { people, steps, status, guides, questions, handbook: t.Handbook || '', fromTracker: true };
 }
 
 // ---------------- writing (one cell, as a commit) ----------------
