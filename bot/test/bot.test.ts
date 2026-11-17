@@ -333,10 +333,10 @@ test('Tag to assign: tagging a teammate posts their task in the thread with Done
   assert.ok(f.calls.slack.some(m => m.thread_ts === '6.1' && /<@U0ASKER01> ✅ done by <@U0TEAMMATE>/.test(m.text)));
 });
 
-test('Update request: "any update on the Kenya joiner?" tags the owners of open steps and DMs them a Mark done', async () => {
+test('Chase request: "chase the owners for the Kenya joiner" lists every open and done step, tags owners, DMs them', async () => {
   const f = installFakes({ joiners: [joinerRow({ ID: 'J-103', Name: 'TEST contractor (Kenya)', Country: 'Kenya', 'Day 0': '2026-11-30' })] });
   await POST(slackRequest({ type: 'event_callback', event_id: 'E61', authorizations: [{ user_id: 'U0BOT' }], event: { type: 'app_mention',
-    channel: 'C0REMIND', user: 'U0ASKER01', ts: '6.2', text: '<@U0BOT> any update on the Kenya joiner? agreement is delayed' } }));
+    channel: 'C0REMIND', user: 'U0ASKER01', ts: '6.2', text: '<@U0BOT> agreement is delayed, chase the owners for the Kenya joiner' } }));
   await drain();
   const reply = f.calls.slack.find(m => m.channel === 'C0REMIND');
   assert.match(reply.text, /TEST contractor \(Kenya\)/);
@@ -457,19 +457,113 @@ test('Re-assign: "I changed the date for TEST fake joiner on the tracker, re-ass
   assert.ok(!f.calls.slack.some(m => /Unanswered question/.test(m.text)), 'not logged as a gap');
 });
 
-test('Status question: "TEST contractor (India), tell me their date of joining and what is pending" is not a date change', async () => {
-  const f = installFakes({ joiners: [joinerRow({ ID: 'J-103', Name: 'TEST contractor (Kenya)', Country: 'Kenya', 'Day 0': '2027-01-20' }),
-                                     joinerRow({ ID: 'J-104', Name: 'TEST contractor (India)', Country: 'India', 'Day 0': '2026-12-15' })] });
-  await POST(slackRequest({ type: 'event_callback', event_id: 'E95', authorizations: [{ user_id: 'U0BOT' }], event: { type: 'app_mention', channel: 'C0REMIND', user: 'U0ASKER01', ts: '12.0',
-    text: '<@U0BOT> there is a joiner TEST contractor (India), tell me their date of joining and what all is pending' } }));
-  await drain();
-  const reply = f.calls.slack.find(m => m.channel === 'C0REMIND');
-  assert.match(reply.text, /\*TEST contractor \(India\)\* \(joiner, day 0 15 Dec/);
-  assert.doesNotMatch(reply.text, /I can move a start/);
+test('Status question: "TEST contractor (India), tell me their date of joining and what is pending" goes to Claude with the exact tracker', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-103', Name: 'TEST contractor (Kenya)', Country: 'Kenya', 'Day 0': '2027-01-20', J03: 'Done' }),
+                                     joinerRow({ ID: 'J-104', Name: 'TEST contractor (India)', Country: 'India', 'Day 0': '2026-11-30', J03: 'Done' })] });
+  await mention('there is a joiner TEST contractor (India), tell me their date of joining and what all is pending');
+  const sys = f.calls.claude.at(-1).system;
+  assert.match(sys, /J-104 \| TEST contractor \(India\) \| JOINER, starts \(day 0\) 30 Nov 2026/);
+  assert.match(sys, /J02 Agreement signed -> PENDING/, 'Pending, never "Not started"');
+  assert.match(sys, /J03 Confidential step \(details only by DM\) -> DONE/, 'confidential step hidden in a channel');
+  assert.doesNotMatch(sys, /Not started/);
+  assert.match(sys, /every open step/i);
+  assert.ok(!f.calls.slack.some(m => /I can move a start|Unanswered question/.test(m.text)), 'not a date change, not a gap');
 });
 
 test('Google Sheet dates are read as real dates, whatever the Sheet shows (13/1/27, 1/13/2027)', async () => {
   const { serialToIso } = await import('../lib/sheets.js');
   assert.equal(serialToIso(46356), '2026-11-30');
   assert.equal(serialToIso(46400), '2027-01-13');
+});
+
+// ---------------- tracker questions (the four demo prompts) ----------------
+async function mention(text: string, opts: { user?: string; channel?: string } = {}) {
+  await POST(slackRequest({ type: 'event_callback', event_id: 'E' + Math.random(), authorizations: [{ user_id: 'U0BOT' }], event: { type: opts.channel?.startsWith('D') ? 'message' : 'app_mention',
+    channel: opts.channel || 'C0REMIND', channel_type: opts.channel?.startsWith('D') ? 'im' : 'channel', user: opts.user || CONFIG.ROLES['People Ops'], ts: String(Date.now() / 1000), text: '<@U0BOT> ' + text } }));
+  await drain();
+}
+const TOOLS = [{ Tools: 'Figma', Department: 'People Ops', POC: 'Stuti' }, { Tools: 'Notion', Department: 'People Ops', POC: 'Stuti' },
+               { Tools: 'GCP', Department: 'Tech Team', POC: 'Alterplots' }, { Tools: 'Postgres', Department: 'Tech Team', POC: 'Alterplots' }];
+
+test('Prompt 1: "what\'s pending for TEST fake joiner\'s joining next month" -> every step with its exact status', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-101', Name: 'TEST fake joiner', 'Day 0': '2026-12-14', J01: 'Done', J04: 'Blocked' })] });
+  await mention("Tell me whats pending for TEST fake joiner's joining next month");
+  const sys = f.calls.claude.at(-1).system;
+  for (const id of ['J01', 'J02', 'J04', 'J07', 'J14']) assert.match(sys, new RegExp('   ' + id + ' '), id + ' listed');
+  assert.match(sys, /J01 Send agreement \(country template\) -> DONE/);
+  assert.match(sys, /J04 Order laptop \(deliver 2 days before start\) -> BLOCKED/);
+  assert.match(sys, /Summary: 1 of 14 steps done, 13 open/);
+  assert.match(sys, /today is 16 Nov 2026/);
+});
+
+test('Prompt 2: accesses on exit -> leaver access steps, shared logins and every tool with its POC tag', async () => {
+  const f = installFakes({ leavers: [leaverRow({ ID: 'L-201', Name: 'Demo leaver (Brazil)', 'Shared logins': 'Canva team login', L03: 'Done' })] });
+  f.data.tools = TOOLS;
+  await mention("Tell me what accesses are revoked and what's yet pending when Demo leaver (Brazil) exits the company");
+  const sys = f.calls.claude.at(-1).system;
+  assert.match(sys, /L03 Prepare asset and access list incl. shared logins -> DONE/);
+  assert.match(sys, /L05 Remove access \(Slack \/ email \/ Notion \/ tools\) by end of day -> PENDING/);
+  assert.match(sys, /shared logins: Canva team login/);
+  assert.match(sys, new RegExp('Tech Team tools, access owner \\(POC\\) <@' + CONFIG.DIRECTORY.alterplots + '> \\(Alterplots\\): GCP, Postgres'));
+  assert.match(sys, new RegExp('People Ops tools, access owner \\(POC\\) <@' + CONFIG.DIRECTORY.stuti + '> \\(Stuti\\): Figma, Notion'));
+});
+
+test('Prompt 3: "have we ordered the laptop" (no name) -> laptop status for every joiner', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-101', Name: 'TEST fake joiner', J04: 'Done' }), joinerRow({ ID: 'J-102', Name: 'Demo joiner (Spain)', Country: 'Spain' })] });
+  await mention('Tell me if we have ordered the laptop');
+  const sys = f.calls.claude.at(-1).system;
+  assert.match(sys, /J-101 \| TEST fake joiner[\s\S]*J04 Order laptop \(deliver 2 days before start\) -> DONE/);
+  assert.match(sys, /J-102 \| Demo joiner \(Spain\)[\s\S]*J04 Order laptop \(deliver 2 days before start\) -> PENDING/);
+  assert.ok(!f.calls.slack.some(m => /Unanswered question/.test(m.text)));
+});
+
+test('Prompt 4: "who owns the welcome msg for a new joiner on day 1" -> playbook with owner role and tag', async () => {
+  const f = installFakes();
+  await mention('Tell me who is the owner of welcome msg for a new joiner on day 1');
+  const sys = f.calls.claude.at(-1).system;
+  assert.match(sys, /J07 Write a personal welcome message \| when: day -1 \| owner role: Lead/);
+  assert.match(sys, new RegExp('Lead = <@' + CONFIG.ROLES.Lead + '>'));
+});
+
+test('Self-serve questions stay self-serve: "which laptop can I order" gets the policy, not the tracker', async () => {
+  const f = installFakes();
+  await mention('which laptop can I order and who approves?');
+  assert.doesNotMatch(f.calls.claude.at(-1).system, /TRACKER \(live/);
+});
+
+test('Privacy: someone who is not People Ops or an owner never gets tracker details', async () => {
+  const f = installFakes();
+  await mention("what's pending for TEST fake joiner", { user: 'U0RANDOM01' });
+  assert.doesNotMatch(f.calls.claude.at(-1).system, /TRACKER \(live/);
+});
+
+test('In a DM the confidential step is named; in a channel it is hidden', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-101', Name: 'TEST fake joiner' })] });
+  await mention("what's pending for TEST fake joiner", { channel: 'D0DM00001' });
+  assert.match(f.calls.claude.at(-1).system, /J03 Collect payment details in payments platform -> PENDING/);
+});
+
+test('Copied row with a repeated ID gets the next free ID in the Sheet, People Ops is told, and its flow starts', async () => {
+  const f = installFakes();
+  const { fixIds } = await import('../lib/sheet-sync.js');
+  const head = ['ID', 'Name', 'Status'];
+  const now = [head, ['J-103', 'TEST contractor (Kenya)', 'Active'], ['J-103', 'TEST contractor (India)', 'Active'], ['', 'No ID person', 'Active']];
+  const seen = [head, ['J-103', 'TEST contractor (Kenya)', 'Active'], ['J-103', 'TEST contractor (India)', 'Active']];
+  const writes: string[] = [];
+  const fake = (globalThis as any).fetch;
+  process.env.GOOGLE_SA_KEY = '{}';
+  (globalThis as any).fetch = async (url: string | URL, opts: RequestInit = {}) => {
+    if (String(url).includes('sheets.googleapis.com')) { writes.push(decodeURIComponent(String(url)) + ' ' + opts.body); return new Response('{}'); }
+    if (String(url).includes('oauth2')) return new Response(JSON.stringify({ access_token: 't' }));
+    return fake(url, opts);
+  };
+  const crypto2 = await import('node:crypto');
+  process.env.GOOGLE_SA_KEY = JSON.stringify({ client_email: 'x@y', private_key: crypto2.generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }) });
+  try {
+    const log = await fixIds('Joiners', now, seen);
+    assert.deepEqual(log, ['Joiners row 3: ID "J-103" -> J-104', 'Joiners row 4: ID "" -> J-105']);
+    assert.equal(now[2][0], 'J-104'); assert.equal(seen[2][0], '', 'treated as a new row');
+    assert.ok(writes.some(w => w.includes("'Joiners'!A3") && w.includes('J-104')));
+    assert.ok(f.calls.slack.some(m => /repeated the ID J-103, so \*TEST contractor \(India\)\* now has the ID \*J-104\*/.test(m.text)));
+  } finally { delete process.env.GOOGLE_SA_KEY; (globalThis as any).fetch = fake; }
 });
