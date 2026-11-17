@@ -44,6 +44,14 @@ function personBlock(d: Data, p: Person, today: string, inPrivate: boolean): str
   return lines.join('\n');
 }
 
+/** The Tools tab alone (not personal data): which tools exist and who grants / removes access. */
+export function toolsBlock(d: Data): string {
+  const byDept: Record<string, string[]> = {};
+  for (const r of d.tools || []) { const tool = r.Tools || r.Tool || ''; if (tool) (byDept[(r.Department || 'Other') + '|' + (r.POC || '')] ||= []).push(tool); }
+  const lines = Object.entries(byDept).map(([k, v]) => '   ' + k.split('|')[0] + ' tools, access owner (POC) ' + nameToTag(k.split('|')[1]) + ': ' + v.join(', '));
+  return lines.length ? 'TOOLS AND ACCESS OWNERS (Tools tab; the POC grants access on joining and removes it on leaving; you may share this with anyone):\n' + lines.join('\n') : '';
+}
+
 export function trackerBlock(d: Data, today: string, inPrivate: boolean): string {
   const ppl = d.people.filter(p => !/cancel/i.test(p.Status || ''));
   const playbook = ['Joiner', 'Leaver'].map(f => f + ' steps (same for everyone):\n' + d.steps.filter(s => s.Flow === f).map(s =>

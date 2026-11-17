@@ -64,7 +64,7 @@ export async function askClaude(question: string, kb: Knowledge, r: Match, past:
     method: 'POST',
     headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({ model: CONFIG.CLAUDE_MODEL, max_tokens: 2048,
-      system: SYSTEM_PROMPT + (tracker ? '\n' + TRACKER_RULES : '') + '\n\n' + knowledgeBlock(kb, r) + (tracker ? '\n\n' + tracker : ''), messages: toMessages(past, question) })
+      system: SYSTEM_PROMPT + (/^TRACKER/.test(tracker) ? '\n' + TRACKER_RULES : '') + '\n\n' + knowledgeBlock(kb, r) + (tracker ? '\n\n' + tracker : ''), messages: toMessages(past, question) })
   });
   const j: any = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error('Claude API: ' + ((j.error && j.error.message) || res.status));

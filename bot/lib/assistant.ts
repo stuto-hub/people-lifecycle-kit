@@ -12,11 +12,11 @@ import { load, setCell, sheetLink, buildTasks, people as peopleOf, getRow, stepI
 import { onTrackerChange } from './tracker-events.js';
 import { sheetOn } from './sheets.js';
 import { pollSheet } from './sheet-sync.js';
-import { trackerBlock, isTrackerQuestion } from './tracker-context.js';
+import { trackerBlock, isTrackerQuestion, toolsBlock } from './tracker-context.js';
 import { addDays } from './core.js';
 import { owner } from './lifecycle.js';
 import { pretty, diffDays } from './core.js';
-import type { Person } from './types.js';
+import type { Person, Step } from './types.js';
 import { send, postMessage, respond, slackApi, slackGet } from './slack.js';
 import { askClaude } from './claude.js';
 import type { Knowledge, Turn } from './claude.js';
@@ -111,9 +111,13 @@ async function taskTitle(text: string): Promise<string> {
 
 export async function assignTask(ev: SlackEvent, assignees: string[], thread_ts?: string) {
   const title = await taskTitle(ev.text);
+  const d = await load();
+  const p = findPerson(ev.text, peopleOf(d));
+  const step = p ? stepFor(ev.text, d.steps.filter(x => x.Flow === p.Flow)) : undefined;   // "ship the laptop for J-104" -> J04
   for (const a of assignees) {
-    const value = JSON.stringify({ r: ev.user, t: title.slice(0, 300) });
-    const text = '👋 <@' + a + '>, <@' + ev.user + '> asked you to: *' + title + '*';
+    const value = JSON.stringify({ r: ev.user, t: title.slice(0, 300), p: p?.id || '', s: step?.id || '' });
+    const text = '👋 <@' + a + '>, <@' + ev.user + '> asked you to: *' + title + '*' +
+      (p && step ? '\n_Tracker step: ' + (step.Confidential ? 'a confidential step' : step.Step) + ' for ' + p.Name + '. Done marks it Done in the Sheet._' : '');
     await postMessage({ channel: ev.channel, thread_ts, text, blocks: [
       { type: 'section', text: { type: 'mrkdwn', text: text + '\nReply here when it is done, or use the buttons.' } },
       { type: 'actions', elements: [
@@ -203,7 +207,7 @@ export async function answerChat(ev: SlackEvent) {
     }
     // A follow-up ("and in Spain?") or a tracker question is not a guide gap.
     const r = tracker ? { ...m, matched: 'TRACKER', action: '' } : past.length && m.matched === 'GAP' ? { ...m, matched: 'FOLLOW_UP', action: '' } : m;
-    answer = await askClaude(question, kb, r, past, tracker);
+    answer = await askClaude(question, kb, r, past, tracker || toolsBlock(d));
     await routeActions(r, ev.user, question, via);
   } catch (err: any) {
     console.error(err);
@@ -247,11 +251,22 @@ export async function buttonClick(payload: any) {
 
 // ---------------- task buttons (from a tag-to-assign message) ----------------
 async function taskButton(payload: any, a: any) {
-  const who = payload.user.id; const { r, t } = JSON.parse(a.value || '{}');
+  const who = payload.user.id; const { r, t, p, s } = JSON.parse(a.value || '{}');
   const channel = payload.channel?.id, thread_ts = payload.message?.thread_ts || payload.message?.ts;
   if (a.action_id === 'task_done') {
-    await respond(payload.response_url, { replace_original: true, text: '✅ <@' + who + '> completed: *' + t + '*' });
-    return postMessage({ channel, thread_ts, text: '<@' + r + '> ✅ done by <@' + who + '>: *' + t + '*' });
+    let note = '';
+    if (p && s) {                                         // the task is a tracker step: mark it Done in the Sheet too
+      try {
+        const saved = await setCell(p, s, 'Done', 'done in Slack by ' + who);
+        if (saved && sheetOn()) {
+          const row = await getRow(p); const col = row && Object.keys(row).find(h => stepIdOf(h) === s);
+          if (row && col) await onTrackerChange({ tab: /^L/i.test(p) ? 'Leavers' : 'Joiners', columns: [col], oldValue: 'Pending', value: 'Done', row });
+        }
+        note = saved ? ' (tracker updated)' : ' (tracker not connected)';
+      } catch (err: any) { note = ' (could not update the tracker: ' + err.message + ')'; }
+    }
+    await respond(payload.response_url, { replace_original: true, text: '✅ <@' + who + '> completed: *' + t + '*' + note });
+    return postMessage({ channel, thread_ts, text: '<@' + r + '> ✅ done by <@' + who + '>: *' + t + '*' + note });
   }
   return postMessage({ channel, thread_ts, text: '<@' + r + '> ❓ <@' + who + '> needs more info for: *' + t + '*. Please reply in this thread.' });
 }
@@ -368,3 +383,18 @@ const PERSONAL = /\b(my|mine|i'm|i am|can i|do i|should i|i start|i leave|i join
 /** People Ops, role owners and named POCs can ask about anyone in the tracker; others get policy answers only. */
 export const canSeeTracker = (user: string) => Object.values(CONFIG.ROLES).includes(user) || Object.values(CONFIG.DIRECTORY).includes(user);
 export const hasRepeatedIds = (d: { repeated?: string[] }) => !!(d.repeated && d.repeated.length);
+
+/** The tracker step a task is about, from the words of the request ("ship the laptop" -> Order laptop). */
+const SYNONYMS: Record<string, string> = { ship: 'laptop', dispatch: 'laptop', macbook: 'laptop', contract: 'agreement', sign: 'agreement',
+  account: 'accounts', slack: 'accounts', google: 'accounts', notion: 'accounts', intro: 'buddy', welcome: 'welcome', exit: 'exit',
+  revoke: 'access remove', remove: 'access', offboard: 'access remove', password: 'passwords', handover: 'handover', survey: 'survey', payment: 'payment' };
+const STOP = new Set(['send', 'with', 'from', 'that', 'this', 'call', 'check', 'days', 'before', 'start', 'incl', 'and', 'the', 'end', 'day']);
+export function stepFor(text: string, steps: Step[]): Step | undefined {
+  const words = new Set(text.toLowerCase().split(/[^a-z]+/).flatMap(w => [w, ...(SYNONYMS[w] || '').split(' ')]).filter(Boolean));
+  let best: Step | undefined, score = 0;
+  for (const st of steps) {
+    const n = st.Step.toLowerCase().split(/[^a-z]+/).filter(w => w.length > 3 && !STOP.has(w) && words.has(w)).length;
+    if (n > score) { best = st; score = n; }
+  }
+  return best;
+}
