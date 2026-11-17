@@ -19,6 +19,10 @@ export const CONFIG = {
     'Hiring coordinator': 'U0CHNNQ8ZRV', 'IT': 'U0CHNNQ8ZRV', 'Finance': 'U0CHNNQ8ZRV', 'Admin': 'U0CHNNQ8ZRV',
     'Lead': 'U0CHNNQ8ZRV', 'Buddy': 'U0CHNNQ8ZRV'
   } as Record<string, string>,
+  DIRECTORY: {                          // names used in the Sheet (POC columns, Tools tab) -> Slack member ID
+    'stuti': 'U0AGY9M1J8M', 'stuti mayekar': 'U0AGY9M1J8M', 'people ops': 'U0AGY9M1J8M',
+    'alterplots': 'U0CHNNQ8ZRV', 'thealterplots': 'U0CHNNQ8ZRV'
+  } as Record<string, string>,
   FALLBACK_USER: 'U0AGY9M1J8M',        // used when a Lead/Buddy ID in the tracker is a placeholder
   TEMPLATES: ['Spain|Contractor', 'Brazil|Employee', 'India|Contractor', 'United States|Contractor'],
   STALE_DAYS: 180,

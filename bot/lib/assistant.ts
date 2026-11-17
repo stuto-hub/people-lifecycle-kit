@@ -12,6 +12,7 @@ import { load, setCell, sheetLink, buildTasks, people as peopleOf, getRow, stepI
 import { onTrackerChange } from './tracker-events.js';
 import { sheetOn } from './sheets.js';
 import { pollSheet } from './sheet-sync.js';
+import { trackerBlock, isTrackerQuestion } from './tracker-context.js';
 import { addDays } from './core.js';
 import { owner } from './lifecycle.js';
 import { pretty, diffDays } from './core.js';
@@ -122,7 +123,6 @@ export async function assignTask(ev: SlackEvent, assignees: string[], thread_ts?
 }
 
 // ---------------- "any update on X?" = tag the owners of X's open steps ----------------
-const UPDATE = /\b(update|status|pending|delay|delayed|chase|follow ?up|remind|stuck|where are we|progress|what's left|whats left|open items|date of joining|joining date|start date|last day)\b/i;
 const NOISE = new Set(['test', 'demo', 'joiner', 'leaver', 'contractor', 'employee', 'fake', 'short', 'notice', 'short-notice']);
 
 export function findPerson(text: string, people: Person[]): Person | undefined {
@@ -136,26 +136,27 @@ export function findPerson(text: string, people: Person[]): Person | undefined {
 }
 
 export async function updateRequest(ev: SlackEvent, p: Person, thread_ts?: string): Promise<string> {
-  const d = await load(); const today = todayIso();
-  const open = buildTasks(d, today).filter(t => t.Person[0] === p.id && t.Status !== 'Done').sort((a, b) => a.Due.localeCompare(b.Due));
-  const soon = open.filter(t => diffDays(t.Due, today) <= 3);
-  const list = (soon.length ? soon : open.slice(0, 3));
-  const head = (p.Flow === 'Joiner' ? '➡️ ' : '⬅️ ') + '*' + p.Name + '* (' + p.Flow.toLowerCase() + ', day 0 ' + pretty(p['Day 0']) + ', ' + p.Status + ')';
-  if (!list.length) return head + '\nNothing open 🎉 every step is done.';
+  const d = await load(); const today = todayIso(); const inDm = ev.channel.startsWith('D');
+  const mine = buildTasks(d, today).filter(t => t.Person[0] === p.id).sort((a, b) => a.Due.localeCompare(b.Due));
+  const open = mine.filter(t => t.Status !== 'Done'), done = mine.filter(t => t.Status === 'Done');
+  const label = (t: any) => t.Confidential && !inDm ? 'a confidential step' : '*' + t.Step + '*';
+  const head = (p.Flow === 'Joiner' ? '➡️ ' : '⬅️ ') + '*' + p.Name + '* (' + p.id + ', ' + p.Flow.toLowerCase() + ', day 0 ' + pretty(p['Day 0']) + ' ' + p['Day 0'].slice(0, 4) + ', ' + p.Status + '): ' + done.length + ' of ' + mine.length + ' steps done';
+  if (!open.length) return head + '\nEverything is done 🎉';
   const owners = new Set<string>();
-  const lines = list.map(t => {
+  const lines = open.map(t => {
     const o = owner(t['Owner role'], p); owners.add(o.id);
     const late = diffDays(today, t.Due);
     const when = late > 0 ? '⏰ ' + late + ' day' + (late > 1 ? 's' : '') + ' overdue' : late === 0 ? '🔔 due today' : 'due ' + pretty(t.Due);
-    return '• ' + (t.Confidential ? 'A confidential step' : '*' + t.Step + '*') + ' (' + t.Status + ', ' + when + ') → <@' + o.id + '>';
+    return '• ' + label(t) + ': ' + t.Status + ', ' + when + ' → <@' + o.id + '>';
   });
-  for (const t of list) {                                  // each owner also gets a DM with a Mark done button
+  for (const t of open.filter(t => diffDays(t.Due, today) <= 7)) {   // owners of what is due within a week also get a DM with Mark done
     const o = owner(t['Owner role'], p);
     await send({ to: o.id, kind: 'nudge', taskId: t._id, url: t._url, confidential: t.Confidential,
       text: '🔔 <@' + ev.user + '> asked for an update: ' + (t.Confidential ? 'a confidential step' : '*' + t.Step + '*') + ' for *' + p.Name + '* (due ' + pretty(t.Due) + ').' });
   }
-  return head + '\n' + lines.join('\n') + '\n' + [...owners].map(o => '<@' + o + '>').join(' ') +
-    ' please update this thread or click *Mark done* in your DM. <' + sheetLink(p.Flow === 'Joiner' ? 'joiners.csv' : 'leavers.csv') + '|Tracker>';
+  return head + '\n*Open (' + open.length + ')*\n' + lines.join('\n') +
+    (done.length ? '\n*Done (' + done.length + ')*: ' + done.map(t => t.Confidential && !inDm ? 'a confidential step' : t.Step).join(', ') : '') +
+    '\n' + [...owners].map(o => '<@' + o + '>').join(' ') + ' please update this thread or click *Mark done* in your DM. <' + sheetLink(p.Flow === 'Joiner' ? 'joiners.csv' : 'leavers.csv') + '|Tracker>';
 }
 
 export async function answerChat(ev: SlackEvent) {
@@ -179,7 +180,7 @@ export async function answerChat(ev: SlackEvent) {
     if (p || iso) return postMessage({ channel: ev.channel, thread_ts, text: '🤔 I can move a start or last day, but I need ' +
       (!p ? 'the person (name, country or ID like J-102)' : 'the new date (e.g. 4 Dec)') + '. Try: _Spain joiner start date moves to 4 Dec_' });
   }
-  if (UPDATE.test(question)) {
+  if (NUDGE.test(question)) {                         // "chase / remind / nudge the owners for X" -> tag + DM them
     const p = findPerson(question, peopleOf(await load()));
     if (p) return postMessage({ channel: ev.channel, thread_ts, text: await updateRequest(ev, p, thread_ts) });
   }
@@ -189,9 +190,20 @@ export async function answerChat(ev: SlackEvent) {
   try {
     const [kb, past] = await Promise.all([knowledge(), history(ev)]);
     const m = match(question, kb);
-    // A follow-up ("and in Spain?") rarely matches on its own; with earlier context Claude answers it, so it is not a guide gap.
-    const r = past.length && m.matched === 'GAP' ? { ...m, matched: 'FOLLOW_UP', action: '' } : m;
-    answer = await askClaude(question, kb, r, past);
+    // Tracker questions ("what's pending for X", "have we ordered the laptop", "who owns the welcome message")
+    // are answered from the live Sheet: every step with its exact status, owner and due date.
+    const context = question + ' ' + past.filter(t => t.role === 'user').map(t => t.content).join(' ');
+    let d = await load();
+    const named = findPerson(question, peopleOf(d)) || findPerson(context, peopleOf(d));
+    const trackerAsk = !!named || (isTrackerQuestion(context) && !PERSONAL.test(question));
+    let tracker = '';
+    if (trackerAsk && canSeeTracker(ev.user)) {
+      if (sheetOn() && hasRepeatedIds(d)) { await pollSheet(); d = await load(); }      // give a copied row its own ID first
+      tracker = trackerBlock(d, todayIso(), ev.channel.startsWith('D'));
+    }
+    // A follow-up ("and in Spain?") or a tracker question is not a guide gap.
+    const r = tracker ? { ...m, matched: 'TRACKER', action: '' } : past.length && m.matched === 'GAP' ? { ...m, matched: 'FOLLOW_UP', action: '' } : m;
+    answer = await askClaude(question, kb, r, past, tracker);
     await routeActions(r, ev.user, question, via);
   } catch (err: any) {
     console.error(err);
@@ -348,3 +360,11 @@ export async function reassign(ev: SlackEvent, who: Person, thread_ts?: string) 
   return postMessage({ channel: ev.channel, thread_ts, text: '📅 *' + p.Name + '* ' + what + ' on *' + pretty(p['Day 0']) + '*. Here is who does what:\n' + lines.join('\n') +
     (open.length > 10 ? '\n…and ' + (open.length - 10) + ' later steps.' : '') + note + '\nEach of you also has a DM with a *Mark done* button. <' + sheetLink(p.Flow === 'Joiner' ? 'joiners.csv' : 'leavers.csv') + '|Open the tracker>' });
 }
+
+// ---------------- who may see tracker details ----------------
+const NUDGE = /\b(chase|nudge|remind|follow ?up with|ping|push (them|the owners?)|ask (them|the owners?) to)\b/i;
+/** "I / my" questions are self-serve policy questions, not tracker lookups. */
+const PERSONAL = /\b(my|mine|i'm|i am|can i|do i|should i|i start|i leave|i join|i need)\b/i;
+/** People Ops, role owners and named POCs can ask about anyone in the tracker; others get policy answers only. */
+export const canSeeTracker = (user: string) => Object.values(CONFIG.ROLES).includes(user) || Object.values(CONFIG.DIRECTORY).includes(user);
+export const hasRepeatedIds = (d: { repeated?: string[] }) => !!(d.repeated && d.repeated.length);

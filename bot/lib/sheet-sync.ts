@@ -4,7 +4,9 @@
  * reacts to each change exactly like a tracker save (flow started, Day 0 moved, Blocked, Done),
  * then refreshes the copies. The first run only creates the copies (nothing to compare yet).
  */
-import { readTab, writeTab, ensureHiddenTab, sheetOn } from './sheets.js';
+import { readTab, writeTab, ensureHiddenTab, sheetOn, writeCell, colLetter } from './sheets.js';
+import { send } from './slack.js';
+import { CONFIG } from './config.js';
 import { stringifyCsv } from './csv.js';
 import { diffTracker, onTrackerChange } from './tracker-events.js';
 import { setData } from './store.js';
@@ -33,6 +35,7 @@ export async function pollSheet(today = todayIso()): Promise<string[]> {
     // Snapshot saved by an older version with dates as displayed (e.g. 13/1/27): refresh it quietly, no reactions.
     const dc = (seen[0] || []).map((h, i) => /^(day 0|added on)$/i.test(String(h).trim()) ? i : -1).filter(i => i >= 0);
     if (seen.slice(1).some(r => dc.some(i => r[i] && !/^\d{4}-\d{2}-\d{2}$/.test(r[i])))) { await writeTab('_' + tab, now); log.push(tab + ': snapshot migrated to real dates'); continue; }
+    log.push(...await fixIds(tab, now, seen));
     const changes = diffTracker(tab, stringifyCsv(seen), stringifyCsv(now));
     for (const c of changes) {
       log.push(tab + ' ' + c.row.ID + ': ' + (c.columns.length === 1 ? c.columns[0] + ' "' + c.oldValue + '" -> "' + c.value + '"' : 'new row'));
@@ -40,6 +43,31 @@ export async function pollSheet(today = todayIso()): Promise<string[]> {
     }
     if (changes.length) await writeTab('_' + tab, (await readTab(tab)) || now);   // re-read: the bot may have written (resets, Added on)
     else log.push(tab + ': no changes');
+  }
+  return log;
+}
+
+/**
+ * A row copied from another one keeps its ID (two "J-103"s), and a new row may have no ID at all.
+ * Gives such a row the next free ID (J-104), writes it into the Sheet and tells People Ops.
+ * The row is then treated as new, so its flow starts like any other new joiner/leaver.
+ */
+export async function fixIds(tab: 'Joiners' | 'Leavers', now: string[][], seen: string[][]): Promise<string[]> {
+  const head = (now[0] || []).map(h => String(h).trim()), idc = head.indexOf('ID'), namec = head.indexOf('Name');
+  if (idc < 0) return [];
+  const prefix = tab === 'Joiners' ? 'J-' : 'L-', used = new Set<string>(), log: string[] = [];
+  let max = Math.max(100, ...now.slice(1).map(r => Number((String(r[idc] || '').match(/(\d+)/) || [])[1] || 0)));
+  for (let r = 1; r < now.length; r++) {
+    const id = String(now[r][idc] || '').trim(), name = String(now[r][namec] || '').trim();
+    if (!name) { if (id) used.add(id); continue; }
+    if (id && !used.has(id)) { used.add(id); continue; }
+    const fresh = prefix + (++max);
+    await writeCell(tab, colLetter(idc) + (r + 1), fresh);
+    now[r][idc] = fresh; used.add(fresh);
+    if (seen[r] && String(seen[r][idc] || '').trim() === id) seen.splice(r, 1, seen[r].map(() => ''));   // so the row counts as new
+    log.push(tab + ' row ' + (r + 1) + ': ID "' + id + '" -> ' + fresh);
+    await send({ to: CONFIG.CHANNEL, kind: 'flag', text: '🆔 Row ' + (r + 1) + ' in ' + tab + (id ? ' repeated the ID ' + id : ' had no ID') +
+      ', so *' + name + '* now has the ID *' + fresh + '* in the Sheet.' });
   }
   return log;
 }

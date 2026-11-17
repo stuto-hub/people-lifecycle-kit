@@ -27,6 +27,10 @@ export interface Data {
   handbook?: string;
   /** tracker/reminders.csv: countdown messages (Flow, Days before, Message with {@Role} tags) */
   reminders?: Row[];
+  /** Tools tab: Tools, Department, POC (who grants and removes access) */
+  tools?: Row[];
+  /** IDs that appear twice (or rows with no ID): the Sheet watcher gives them a new ID */
+  repeated?: string[];
   /** true when read from the tracker CSVs: flow starts and date moves are then posted on change, not by the daily run */
   fromTracker?: boolean;
 }

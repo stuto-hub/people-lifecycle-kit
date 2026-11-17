@@ -13,9 +13,9 @@ import { toObjects, setCellInCsv } from './csv.js';
 import type { Data, Person, Row, Step, StepStatus, Task } from './types.js';
 import { sheetOn, tabCsv, setSheetCell } from './sheets.js';
 
-export const FILES = { Joiners: 'joiners.csv', Leavers: 'leavers.csv', Steps: 'steps.csv', Guides: 'guides.csv', Questions: 'questions.csv', Handbook: 'handbook.md', Reminders: 'reminders.csv' } as const;
+export const FILES = { Joiners: 'joiners.csv', Leavers: 'leavers.csv', Steps: 'steps.csv', Guides: 'guides.csv', Questions: 'questions.csv', Handbook: 'handbook.md', Reminders: 'reminders.csv', Tools: 'tools.csv' } as const;
 export type Tab = keyof typeof FILES;
-const OPTIONAL: string[] = ['Handbook', 'Reminders'];
+const OPTIONAL: string[] = ['Handbook', 'Reminders', 'Tools'];
 export type Texts = Record<Tab, string>;
 
 let override: Data | null = null;
@@ -54,7 +54,7 @@ export async function loadTexts(): Promise<Texts> {
   const dir = path.join(process.cwd(), 'tracker');
   if (!sheetOn()) return existsSync(path.join(dir, FILES.Joiners)) ? readTexts(dir) : fetchTexts();
   const base = await fetchTexts();
-  await Promise.all((['Joiners', 'Leavers', 'Steps', 'Guides', 'Questions', 'Reminders'] as Tab[]).map(async tab => {
+  await Promise.all((['Joiners', 'Leavers', 'Steps', 'Guides', 'Questions', 'Reminders', 'Tools'] as Tab[]).map(async tab => {
     const csv = await tabCsv(tab);
     if (csv !== null) base[tab] = csv;
     else if (tab === 'Joiners' || tab === 'Leavers') throw new Error('the Sheet has no "' + tab + '" tab');
@@ -126,9 +126,10 @@ export function personFromRow(row: Row, tab: string): { person: Person; status: 
 }
 
 export function fromTexts(t: Texts): Data {
-  const people: Person[] = [], status: Record<string, StepStatus> = {};
+  const people: Person[] = [], status: Record<string, StepStatus> = {}, repeated: string[] = [];
   for (const tab of ['Joiners', 'Leavers'] as const) for (const row of toObjects(t[tab])) {
-    if (!row.ID) continue;
+    if (!row.Name && !row.ID) continue;
+    if (!row.ID || people.some(x => x.id === row.ID)) { repeated.push(row.ID || '(no ID) ' + row.Name); continue; }   // fixed by the Sheet watcher (fixIds)
     const r = personFromRow(row, tab); people.push(r.person); Object.assign(status, r.status);
   }
   const steps: Step[] = toObjects(t.Steps).filter(s => s.ID).map(s => ({ id: s.ID, Step: s.Step, Flow: s.Flow as Step['Flow'],
@@ -138,7 +139,8 @@ export function fromTexts(t: Texts): Data {
   const questions = toObjects(t.Questions).filter(q => q.Question).map(q => ({ Question: q.Question, Guide: q.Guide, Keywords: q.Keywords,
     Answer: q.Answer, Action: q.Action, Confidential: yes(q.Confidential) }));
   const reminders = toObjects(t.Reminders || '').filter(r => r.Flow && r.Message);
-  return { people, steps, status, guides, questions, handbook: t.Handbook || '', reminders, fromTracker: true };
+  const tools = toObjects(t.Tools || '').filter(r => Object.values(r).some(v => String(v || '').trim()));
+  return { people, steps, status, guides, questions, handbook: t.Handbook || '', reminders, tools, repeated, fromTracker: true };
 }
 
 // ---------------- writing (one cell, as a commit) ----------------
@@ -189,7 +191,7 @@ export function buildTasks(d: Data, today: string): Task[] {
       const st = d.status[key] || { Status: '' };
       let due = addDays(p['Day 0'], Number(s['Offset (days)'])), notes = st.Notes || '';
       if (p['Added on'] && diffDays(due, p['Added on']) < 0) { due = p['Added on']; notes = notes || 'Short notice: due date pulled to the day they were added'; }
-      const status = st.Status || 'Not started';
+      const status = st.Status || 'Pending';
       const late = diffDays(today, due);
       const open = status !== 'Done';
       tasks.push({ _id: key, _url: sheetLink(), Person: [p.id], Step: s.Step, StepId: s.id, Due: due, Status: status, Notes: notes,

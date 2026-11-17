@@ -2,6 +2,7 @@
 import { diffDays } from './core.js';
 import type { GuideRef, Intent, Match } from './core.js';
 import { CONFIG, env, todayIso } from './config.js';
+import { TRACKER_RULES } from './tracker-context.js';
 
 export const SYSTEM_PROMPT = [
   'You are People Ops Bot, the Slack assistant for a fully remote, mostly async company of about 150 people in 30+ countries.',
@@ -11,10 +12,10 @@ export const SYSTEM_PROMPT = [
   '- Point to the right guide with its link as <url|Guide name> and name the owner team.',
   '- If a guide is marked "review due" or "never reviewed", say it may be out of date and to confirm with the owner.',
   '- Pay, invoices, health, legal, performance and leaving are confidential: keep it general, point to the owner, suggest a private DM, and never ask for personal details in Slack.',
-  '- You cannot see anyone\'s personal records and must not guess about other people.',
+  '- You can see the joining/leaving tracker (TRACKER block, when present) but no other personal records; never guess about people.',
   '- You inform; humans decide. Never promise approvals, pay or outcomes.',
   '- Only mention follow-up actions listed under ACTIONS TAKEN. Never say someone was told or something was logged unless it is listed there.',
-  '- Style: friendly, plain English, Slack formatting (*bold*, bullets), at most 6 short lines.'
+  '- Style: friendly, plain English, Slack formatting (*bold*, bullets), at most 6 short lines unless the tracker rules allow more.'
 ].join('\n');
 
 export interface Knowledge { guides: GuideRef[]; intents: Intent[]; handbook?: string }
@@ -55,14 +56,14 @@ export function toMessages(past: Turn[], question: string): Turn[] {
   return msgs;
 }
 
-export async function askClaude(question: string, kb: Knowledge, r: Match, past: Turn[] = []): Promise<string> {
+export async function askClaude(question: string, kb: Knowledge, r: Match, past: Turn[] = [], tracker = ''): Promise<string> {
   const key = env('ANTHROPIC_API_KEY');
   if (!key) return r.text;                       // no Claude key: rule-based answer
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({ model: CONFIG.CLAUDE_MODEL, max_tokens: 2048,
-      system: SYSTEM_PROMPT + '\n\n' + knowledgeBlock(kb, r), messages: toMessages(past, question) })
+      system: SYSTEM_PROMPT + (tracker ? '\n' + TRACKER_RULES : '') + '\n\n' + knowledgeBlock(kb, r) + (tracker ? '\n\n' + tracker : ''), messages: toMessages(past, question) })
   });
   const j: any = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error('Claude API: ' + ((j.error && j.error.message) || res.status));
