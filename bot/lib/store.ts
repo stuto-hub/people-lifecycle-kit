@@ -5,7 +5,7 @@
  *   guides.csv / questions.csv what /people and the chat bot answer from
  * Every save in GitHub is a commit, so the change history doubles as an audit trail.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { addDays, diffDays } from './core.js';
 import { CONFIG, env, trackerUrl } from './config.js';
@@ -21,6 +21,9 @@ export function setData(d: Data | null) { override = d; }          // tests
 
 export const sheetLink = () => trackerUrl();
 
+const gh = (p: string, init: RequestInit = {}) => fetch('https://api.github.com/repos/' + CONFIG.REPO + '/contents/' + p, { ...init,
+  headers: { Authorization: 'Bearer ' + env('TRACKER_TOKEN'), Accept: 'application/vnd.github+json', 'User-Agent': 'people-ops-bot', ...(init.headers || {}) } });
+
 // ---------------- reading ----------------
 export function readTexts(dir = path.join(process.cwd(), 'tracker')): Texts {
   const out = {} as Texts;
@@ -28,9 +31,39 @@ export function readTexts(dir = path.join(process.cwd(), 'tracker')): Texts {
   return out;
 }
 
+let cache: { at: number; d: Data } | null = null;
+
+/**
+ * GitHub Actions and tests read the checked-out files. The Vercel bot reads the latest saved version
+ * straight from GitHub (cached for a minute), so a tracker edit never needs a redeploy.
+ */
 export async function load(): Promise<Data> {
   if (override) return override;
-  return fromTexts(readTexts());
+  const dir = path.join(process.cwd(), 'tracker');
+  if (existsSync(path.join(dir, FILES.Joiners))) return fromTexts(readTexts(dir));
+  if (cache && Date.now() - cache.at < 60000) return cache.d;
+  const d = fromTexts(await fetchTexts());
+  cache = { at: Date.now(), d };
+  return d;
+}
+
+async function fetchTexts(): Promise<Texts> {
+  const out = {} as Texts;
+  await Promise.all(Object.entries(FILES).map(async ([tab, file]) => {
+    const p = CONFIG.TRACKER_DIR + '/' + file;
+    let text: string;
+    if (env('TRACKER_TOKEN')) {                              // fresh, authenticated
+      const j: any = await (await gh(p + '?ref=main')).json();
+      if (!j.content) throw new Error('could not read tracker ' + file + ' (' + (j.message || 'no content') + ')');
+      text = Buffer.from(j.content, 'base64').toString('utf8');
+    } else {                                                 // public raw file (GitHub caches it for a few minutes)
+      const r = await fetch('https://raw.githubusercontent.com/' + CONFIG.REPO + '/main/' + p);
+      if (!r.ok) throw new Error('could not read tracker ' + file + ' (' + r.status + ')');
+      text = await r.text();
+    }
+    out[tab as Tab] = text;
+  }));
+  return out;
 }
 
 const yes = (v: unknown) => v === true || /^(yes|y|true|✓|x)$/i.test(String(v || '').trim());
@@ -79,8 +112,6 @@ export function fromTexts(t: Texts): Data {
 }
 
 // ---------------- writing (one cell, as a commit) ----------------
-const gh = (p: string, init: RequestInit = {}) => fetch('https://api.github.com/repos/' + CONFIG.REPO + '/contents/' + p, { ...init,
-  headers: { Authorization: 'Bearer ' + env('TRACKER_TOKEN'), Accept: 'application/vnd.github+json', 'User-Agent': 'people-ops-bot', ...(init.headers || {}) } });
 
 /**
  * Writes e.g. "Done" into a person's step column (column = step ID like "J04", or a column name like "Added on").
