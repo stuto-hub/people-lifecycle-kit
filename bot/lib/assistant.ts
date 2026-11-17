@@ -83,10 +83,11 @@ export async function answerChat(ev: SlackEvent) {
   let answer: string;
   try {
     const [kb, past] = await Promise.all([knowledge(), history(ev)]);
-    const r = match(question, kb);
-    answer = await askClaude(question, kb, r, past);
+    const m = match(question, kb);
     // A follow-up ("and in Spain?") rarely matches on its own; with earlier context Claude answers it, so it is not a guide gap.
-    await routeActions(past.length && r.matched === 'GAP' ? { ...r, matched: 'FOLLOW_UP', action: '' } : r, ev.user, question, via);
+    const r = past.length && m.matched === 'GAP' ? { ...m, matched: 'FOLLOW_UP', action: '' } : m;
+    answer = await askClaude(question, kb, r, past);
+    await routeActions(r, ev.user, question, via);
   } catch (err: any) {
     console.error(err);
     answer = 'Sorry, I hit a problem answering that. People Ops has been told. You can also check the tracker: ' + sheetLink();

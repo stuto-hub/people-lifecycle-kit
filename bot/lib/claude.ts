@@ -13,6 +13,7 @@ export const SYSTEM_PROMPT = [
   '- Pay, invoices, health, legal, performance and leaving are confidential: keep it general, point to the owner, suggest a private DM, and never ask for personal details in Slack.',
   '- You cannot see anyone\'s personal records and must not guess about other people.',
   '- You inform; humans decide. Never promise approvals, pay or outcomes.',
+  '- Only mention follow-up actions listed under ACTIONS TAKEN. Never say someone was told or something was logged unless it is listed there.',
   '- Style: friendly, plain English, Slack formatting (*bold*, bullets), at most 6 short lines.'
 ].join('\n');
 
@@ -29,7 +30,16 @@ export function knowledgeBlock(kb: Knowledge, r: Match, today = todayIso()): str
   const qa = kb.intents.map(i => '- Topic keywords: ' + i.keywords.replace(/\|/g, ', ') + ' | guide: ' + (i.guide_id || 'none yet') +
     ' | answer: ' + i.answer + (i.sensitive === 'Y' ? ' | confidential' : '')).join('\n');
   const hint = r.matched === 'GAP' ? 'Best rule-based match: none (this is a gap).' : 'Best rule-based match: ' + r.text.replace(/\n/g, ' ');
-  return 'KNOWLEDGE\nGuides:\n' + guides + '\nKnown questions:\n' + qa + '\n\n' + hint;
+  return 'KNOWLEDGE\nGuides:\n' + guides + '\nKnown questions:\n' + qa + '\n\n' + hint + '\n\nACTIONS TAKEN\n' + actionsTaken(r);
+}
+
+/** What the bot actually does after answering, so Claude describes it truthfully. */
+export function actionsTaken(r: Match): string {
+  if (r.matched === 'FOLLOW_UP') return '- none (follow-up question; nobody was notified)';
+  if (r.action === 'notify_leaver') return '- People Ops was alerted privately to confirm the last day. No record was changed.';
+  if (r.action === 'route_finance') return '- The question was sent to Finance. It was NOT logged as a gap.';
+  if (r.action === 'route_people_ops' || r.matched === 'GAP') return '- The question was logged for People Ops as a missing guide.';
+  return '- none (nobody was notified)';
 }
 
 /** Earlier turns + the new question, merged so roles alternate and the first one is the user's. */
