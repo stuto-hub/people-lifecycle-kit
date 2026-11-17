@@ -1,1 +1,11 @@
-{ "functions": { "api/slack.ts": { "includeFiles": "tracker/**" } } }
+{
+ "functions": {
+  "api/slack.ts": {
+   "includeFiles": "tracker/**",
+   "maxDuration": 60
+  },
+  "api/cron.ts": {
+   "maxDuration": 60
+  }
+ }
+}
