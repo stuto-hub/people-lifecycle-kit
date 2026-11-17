@@ -362,7 +362,7 @@ test('Date change in Slack: preview with Confirm; on confirm the tracker moves, 
     channel: 'C0REMIND', user: 'U0ASKER01', ts: '8.1', text: "<@U0BOT> the Spain joiner's start date moves to 4 Dec" } }));
   await drain();
   const preview = f.calls.slack.find(m => m.channel === 'C0REMIND');
-  assert.match(preview.text, /Move \*Demo joiner \(Spain\)\*'s start date from \*27 Nov\* to \*4 Dec\*/);
+  assert.match(preview.text, /Move \*Demo joiner \(Spain\)\*'s start date from \*27 Nov\* to \*4 Dec 2026\*/);
   assert.equal(f.data.people[0]['Day 0'], '2026-11-27', 'nothing changes before Confirm');
   const value = preview.blocks[1].elements[0].value;
   await POST(slackRequest({ payload: JSON.stringify({ type: 'block_actions', user: { id: 'U0ASKER01' }, response_url: 'https://hooks.slack.test/r4',
@@ -423,4 +423,23 @@ test('Google Sheet: edits typed in the Sheet are spotted and handled once; the b
     assert.equal(tabs.Joiners[1][head.findIndex(h => h.startsWith('J01'))], 'Done');
     assert.match((await pollSheet(T)).join(' '), /Joiners: no changes/, "the bot's own writes are not mistaken for edits");
   } finally { delete process.env.GOOGLE_SA_KEY; (globalThis as any).fetch = fakeFetch; }
+});
+
+test('Dates: numbers are day/month (14/1/2026), "from X to Y" takes Y; a date in a thread reply continues the change', async () => {
+  assert.equal(parseDate('start date is changed from 12/1/2026 to 14/1/2026', '2026-11-17'), '2026-01-14');
+  assert.equal(parseDate('start date moves to 14/1/2027', '2026-11-17'), '2027-01-14');
+  assert.equal(parseDate('last day moves to 12/31', '2026-11-17'), '2026-12-31');
+  assert.equal(parseDate('start date moves to 5/12', '2026-11-17'), '2026-12-05');
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-103', Name: 'TEST contractor (Kenya)', Country: 'Kenya', 'Day 0': '2026-12-01' })] });
+  f; // the thread: first message had no usable date, the reply gives it
+  const fake = (globalThis as any).fetch;
+  (globalThis as any).fetch = async (url: string | URL, opts: RequestInit = {}) => String(url).includes('conversations.replies')
+    ? new Response(JSON.stringify({ ok: true, messages: [{ ts: '10.0', user: 'U0ASKER01', text: '<@U0BOT> the start date for TEST contractor (Kenya) is changed, update the sheet pls' }] }))
+    : fake(url, opts);
+  await POST(slackRequest({ type: 'event_callback', event_id: 'E80', authorizations: [{ user_id: 'U0BOT' }], event: { type: 'app_mention',
+    channel: 'C0REMIND', user: 'U0ASKER01', ts: '10.5', thread_ts: '10.0', text: 'this is the new date 14/1/2027 <@U0BOT>' } }));
+  await drain();
+  (globalThis as any).fetch = fake;
+  const preview = f.calls.slack.find(m => m.channel === 'C0REMIND');
+  assert.match(preview.text, /Move \*TEST contractor \(Kenya\)\*'s start date from \*1 Dec\* to \*14 Jan 2027\*/);
 });
