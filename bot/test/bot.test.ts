@@ -443,3 +443,16 @@ test('Dates: numbers are day/month (14/1/2026), "from X to Y" takes Y; a date in
   const preview = f.calls.slack.find(m => m.channel === 'C0REMIND');
   assert.match(preview.text, /Move \*TEST contractor \(Kenya\)\*'s start date from \*1 Dec\* to \*14 Jan 2027\*/);
 });
+
+test('Re-assign: "I changed the date for TEST fake joiner on the tracker, re-assign and tag them" tags owners in the thread', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-101', Name: 'TEST fake joiner', Country: 'India', 'Day 0': '2026-12-10' })] });
+  await POST(slackRequest({ type: 'event_callback', event_id: 'E90', authorizations: [{ user_id: 'U0BOT' }], event: { type: 'app_mention', channel: 'C0REMIND', user: 'U0ASKER01', ts: '11.0',
+    text: '<@U0BOT> i have changed the joining date for TEST fake joiner on the tracker. please re-assign to respective people their tasks and tag them under this thread' } }));
+  await drain();
+  const reply = f.calls.slack.find(m => m.channel === 'C0REMIND');
+  assert.equal(reply.thread_ts, '11.0');
+  assert.match(reply.text, /\*TEST fake joiner\* starts on \*10 Dec\*. Here is who does what/);
+  assert.match(reply.text, new RegExp('<@' + CONFIG.ROLES['Hiring coordinator'] + '> \\*Send agreement'));
+  assert.ok(f.calls.slack.some(m => m.channel === CONFIG.ROLES['Hiring coordinator'] && m.blocks && /Your task/.test(m.text)), 'owners get a DM with Mark done');
+  assert.ok(!f.calls.slack.some(m => /Unanswered question/.test(m.text)), 'not logged as a gap');
+});
