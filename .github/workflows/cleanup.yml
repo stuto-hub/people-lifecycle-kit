@@ -18,7 +18,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node scripts/cleanup.js
+      - run: npm install --no-audit --no-fund
+      - run: npx tsx scripts/cleanup.ts
         env:
           LINKS: ${{ inputs.links }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

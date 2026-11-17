@@ -1,0 +1,37 @@
+name: Tracker changed
+
+# Every save to the tracker is a commit; this reacts to it within about a minute:
+# flow started + owners assigned, date moved, step blocked or done.
+on:
+  push:
+    branches: [main]
+    paths: ['bot/tracker/joiners.csv', 'bot/tracker/leavers.csv']
+
+permissions:
+  contents: write              # to stamp "Added on" and set date-dependent steps back to Pending
+
+concurrency:
+  group: tracker
+  cancel-in-progress: false    # handle saves one after another, never skip one
+
+jobs:
+  react:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: bot
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # needs the previous version to compare with
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: React to the change
+        run: npx tsx scripts/on-change.ts
+        env:
+          BEFORE: ${{ github.event.before }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          TRACKER_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -17,5 +17,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Test plan (fake joiner + edge cases, Notion/Slack/Claude faked)
-        run: node --test test/*.test.js
+      - run: npm install --no-audit --no-fund
+      - name: Type-check
+        run: npx tsc --noEmit
+      - name: Test plan (fake joiner + edge cases; Slack, Claude and GitHub faked)
+        run: npx tsx --test test/*.test.ts

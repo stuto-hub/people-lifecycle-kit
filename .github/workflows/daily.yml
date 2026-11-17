@@ -2,7 +2,8 @@ name: Daily lifecycle run
 
 on:
   schedule:
-    - cron: '30 3 * * *'        # 03:30 UTC = 09:00 IST, every day
+    - cron: '30 3 * * *'        # 03:30 UTC = 09:00 IST
+    - cron: '30 15 * * *'       # 15:30 UTC = 21:00 IST backup, in case GitHub skips the morning run
   workflow_dispatch:            # "Run workflow" button in the Actions tab
     inputs:
       mode:
@@ -15,7 +16,7 @@ on:
         required: false
         default: ''
 
-concurrency: lifecycle-run       # never two runs at once
+concurrency: lifecycle-run
 
 jobs:
   run:
@@ -29,8 +30,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: npm install --no-audit --no-fund
       - name: Run the bot
-        run: node scripts/daily.js "$MODE"
+        run: npx tsx scripts/daily.ts "$MODE"
         env:
           MODE: ${{ inputs.mode || 'daily' }}
           TODAY: ${{ inputs.today }}
