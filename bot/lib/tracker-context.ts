@@ -10,6 +10,8 @@ import { pretty, diffDays } from './core.js';
 import type { Data, Person } from './types.js';
 
 const tag = (id: string) => '<@' + id + '>';
+/** "Candidate" steps (signing the agreement) are done by the new joiner; People Ops chases them. */
+const roleLabel = (r: string) => r === 'Candidate' ? 'the joiner (People Ops chases)' : r;
 const dayLabel = (n: number) => n === 0 ? 'day 0' : n > 0 ? 'day +' + n : 'day ' + n;
 
 /** A name from the Sheet ("Stuti", "Alterplots") as a Slack tag when known. */
@@ -35,7 +37,7 @@ function personBlock(d: Data, p: Person, today: string, inPrivate: boolean): str
   for (const t of tasks) {
     const late = diffDays(today, t.Due);
     const health = t.Status === 'Done' ? 'DONE' : t.Status === 'Blocked' ? 'BLOCKED' + (t.Notes ? ' (' + t.Notes + ')' : '') : (t.Status.toUpperCase()) + (late > 0 ? ', ' + late + ' days overdue' : late === 0 ? ', due today' : '');
-    lines.push('   ' + t.StepId + ' ' + name(t) + ' -> ' + health + ' | due ' + pretty(t.Due) + ' ' + t.Due.slice(0, 4) + ' | owner: ' + t['Owner role'] + ' ' + tag(owner(t['Owner role'], p).id));
+    lines.push('   ' + t.StepId + ' ' + name(t) + ' -> ' + health + ' | due ' + pretty(t.Due) + ' ' + t.Due.slice(0, 4) + ' | owner: ' + roleLabel(t['Owner role']) + ' ' + tag(owner(t['Owner role'], p).id));
   }
   const done = tasks.filter(t => t.Status === 'Done').length;
   lines.push('   Summary: ' + done + ' of ' + tasks.length + ' steps done, ' + (tasks.length - done) + ' open.');
@@ -46,7 +48,7 @@ export function trackerBlock(d: Data, today: string, inPrivate: boolean): string
   const ppl = d.people.filter(p => !/cancel/i.test(p.Status || ''));
   const playbook = ['Joiner', 'Leaver'].map(f => f + ' steps (same for everyone):\n' + d.steps.filter(s => s.Flow === f).map(s =>
     '   ' + s.id + ' ' + (s.Confidential && !inPrivate ? 'Confidential step' : s.Step) + ' | when: ' + dayLabel(s['Offset (days)']) +
-    ' | owner role: ' + s['Owner role'] + (s.Critical ? ' | critical' : '') + (s['Human moment'] ? ' | human moment (personal, not automated)' : '')).join('\n')).join('\n');
+    ' | owner role: ' + roleLabel(s['Owner role']) + (s.Critical ? ' | critical' : '') + (s['Human moment'] ? ' | human moment (personal, not automated)' : '')).join('\n')).join('\n');
   const roles = Object.entries(CONFIG.ROLES).map(([r, id]) => r + ' = ' + tag(id)).join(', ');
   const byDept: Record<string, { poc: string; tools: string[] }> = {};
   for (const r of d.tools || []) {

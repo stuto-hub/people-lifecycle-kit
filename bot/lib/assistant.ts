@@ -277,9 +277,9 @@ export function parseDate(text: string, today: string): string {
     const a = Number(m[1]), b = Number(m[2]), y = m[3] ? Number(m[3]) : null;
     if (b > 12 && a <= 12) add(m.index!, y, a, b); else add(m.index!, y, b, a);       // day/month unless impossible
   }
-  for (const m of t.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:,?\s+(\d{4}))?/g))
+  for (const m of t.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:,?\s+(\d{4}))?\b/g))
     add(m.index!, m[3] ? Number(m[3]) : null, MONTHS.indexOf(m[2]) + 1, Number(m[1]));
-  for (const m of t.matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?/g))
+  for (const m of t.matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:,?\s+(\d{4}))?/g))
     add(m.index!, m[3] ? Number(m[3]) : null, MONTHS.indexOf(m[1]) + 1, Number(m[2]));
   if (!found.length) return '';
   const toAt = t.lastIndexOf(' to ');
