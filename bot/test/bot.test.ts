@@ -294,3 +294,52 @@ test('Mark done button updates the tracker and the Slack message', async () => {
   assert.equal(f.data.status['J-7::J06'].Status, 'Done');
   assert.match(f.calls.responses[0].text, /Marked done by <@U0CLICKER>/);
 });
+
+// ---------------- countdown reminders + tag-to-assign + update requests ----------------
+test('Countdown: joiners and leavers get 5-day, 3-day and day-0 posts in #reminders, with each team tagged', async () => {
+  const f = installFakes({
+    joiners: [joinerRow({ ID: 'J-5', Name: 'Asha', 'Day 0': '2026-11-21', Status: 'Not started' }),
+              joinerRow({ ID: 'J-3', Name: 'Ben', 'Day 0': '2026-11-19' }),
+              joinerRow({ ID: 'J-0', Name: 'Cara', 'Day 0': T }),
+              joinerRow({ ID: 'J-4', Name: 'Dev', 'Day 0': '2026-11-20' }),
+              joinerRow({ ID: 'J-X', Name: 'Eli', 'Day 0': '2026-11-21', Status: 'Cancelled' })],
+    leavers: [leaverRow({ ID: 'L-3', Name: 'Faye', 'Day 0': '2026-11-19', 'Shared logins': 'team Canva' })] });
+  await run();
+  const c = f.calls.slack.filter(m => m.channel === CONFIG.REMINDERS);
+  assert.equal(c.length, 4, 'Asha (5), Ben (3), Cara (0), Faye (3); not Dev (4) or the cancelled Eli');
+  assert.match(c.find(m => /Asha/.test(m.text)).text, new RegExp('<@' + CONFIG.ROLES.IT + '> please keep their laptop ready to dispatch'));
+  assert.match(c.find(m => /Ben/.test(m.text)).text, /you're their buddy/);
+  assert.match(c.find(m => /Cara/.test(m.text)).text, /joins today!.*introduce them/);
+  assert.match(c.find(m => /Faye/.test(m.text)).text, /shared logins to rotate: team Canva/);
+  assert.ok(f.calls.slack.some(m => /4 countdown reminders/.test(m.text)), 'heartbeat counts them');
+});
+
+test('Tag to assign: tagging a teammate posts their task in the thread with Done / Need more info', async () => {
+  const f = installFakes();
+  await POST(slackRequest({ type: 'event_callback', event_id: 'E60', authorizations: [{ user_id: 'U0BOT' }], event: { type: 'app_mention',
+    channel: 'C0REMIND', user: 'U0ASKER01', ts: '6.1', text: "<@U0BOT> can you please assign X employee's date of joining to <@U0TEAMMATE>" } }));
+  await drain();
+  const msg = f.calls.slack.find(m => m.channel === 'C0REMIND');
+  assert.equal(msg.thread_ts, '6.1');
+  assert.match(msg.text, /<@U0TEAMMATE>, <@U0ASKER01> asked you to:/);
+  assert.deepEqual(msg.blocks[1].elements.map((e: any) => e.action_id), ['task_done', 'task_help']);
+  assert.ok(!f.calls.slack.some(m => /Unanswered question/.test(m.text)), 'not treated as a knowledge question');
+  // the teammate clicks Done: the asker is tagged in the thread
+  const value = msg.blocks[1].elements[0].value;
+  await POST(slackRequest({ payload: JSON.stringify({ type: 'block_actions', user: { id: 'U0TEAMMATE' }, response_url: 'https://hooks.slack.test/r3',
+    channel: { id: 'C0REMIND' }, message: { ts: '7.0', thread_ts: '6.1' }, actions: [{ action_id: 'task_done', value }] }) }, { json: false }));
+  await drain();
+  assert.match(f.calls.responses.at(-1).text, /completed/);
+  assert.ok(f.calls.slack.some(m => m.thread_ts === '6.1' && /<@U0ASKER01> ✅ done by <@U0TEAMMATE>/.test(m.text)));
+});
+
+test('Update request: "any update on the Kenya joiner?" tags the owners of open steps and DMs them a Mark done', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-103', Name: 'TEST contractor (Kenya)', Country: 'Kenya', 'Day 0': '2026-11-30' })] });
+  await POST(slackRequest({ type: 'event_callback', event_id: 'E61', authorizations: [{ user_id: 'U0BOT' }], event: { type: 'app_mention',
+    channel: 'C0REMIND', user: 'U0ASKER01', ts: '6.2', text: '<@U0BOT> any update on the Kenya joiner? agreement is delayed' } }));
+  await drain();
+  const reply = f.calls.slack.find(m => m.channel === 'C0REMIND');
+  assert.match(reply.text, /TEST contractor \(Kenya\)/);
+  assert.match(reply.text, new RegExp('<@' + CONFIG.ROLES['Hiring coordinator'] + '>'));
+  assert.ok(f.calls.slack.some(m => m.channel === CONFIG.ROLES['Hiring coordinator'] && m.blocks && /asked for an update/.test(m.text)));
+});
