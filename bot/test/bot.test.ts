@@ -394,6 +394,10 @@ test('Google Sheet: edits typed in the Sheet are spotted and handled once; the b
     const body = opts.body ? JSON.parse(String(opts.body)) : {};
     const path = decodeURIComponent(u.split('/spreadsheets/')[1].replace(/^[^/?:]+/, ''));
     if (path.startsWith('?fields')) return new Response(JSON.stringify({ sheets: Object.keys(tabs).map(title => ({ properties: { title } })) }));
+    if (path.startsWith('/values:batchGet')) {
+      const names = [...path.matchAll(/ranges='([^']+)'/g)].map(x => x[1]);
+      return new Response(JSON.stringify({ valueRanges: names.map(n => ({ values: tabs[n] })) }));
+    }
     if (path.startsWith(':batchUpdate')) { tabs[body.requests[0].addSheet.properties.title] = []; return new Response('{}'); }
     const m = path.match(/^\/values\/'([^']+)'(?:!([A-Z]+)(\d+))?(:clear)?/)!;
     const tab = m[1];
@@ -422,6 +426,10 @@ test('Google Sheet: edits typed in the Sheet are spotted and handled once; the b
     assert.ok(await setCell('J-201', 'J01', 'Done'));
     assert.equal(tabs.Joiners[1][head.findIndex(h => h.startsWith('J01'))], 'Done');
     assert.match((await pollSheet(T)).join(' '), /Joiners: no changes/, "the bot's own writes are not mistaken for edits");
+    const { readTabs } = await import('../lib/sheets.js');
+    const all = await readTabs(['Joiners', 'Leavers', 'Tools']);
+    assert.equal(all.Joiners![1][0], 'J-201'); assert.equal(all.Joiners![1][4], '2026-11-30', 'date read as a date');
+    assert.equal(all.Tools, null, 'missing tab -> null, no error');
   } finally { delete process.env.GOOGLE_SA_KEY; (globalThis as any).fetch = fakeFetch; }
 });
 
@@ -656,4 +664,28 @@ test('Thread follow-ups keep the topic and never claim actions that did not happ
     assert.doesNotMatch(c.system, /TRACKER \(live/, 'payroll follow-ups are not tracker lookups');
   }
   assert.ok(!f.calls.slack.some(m => /Unanswered question/.test(m.text)), 'nothing logged');
+});
+
+test('Chat status change: "mark the laptop as done for J-104" updates that step; "set it back to pending" in the thread too', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-104', Name: 'TEST contractor (India)', Country: 'India' })] });
+  await mention('mark the laptop as done for J-104');
+  assert.equal(f.data.status['J-104::J04'].Status, 'Done');
+  assert.ok(f.calls.slack.some(m => /Order laptop .* for \*TEST contractor \(India\)\* \(J-104\): Pending → \*Done\*/.test(m.text)));
+  const fake = (globalThis as any).fetch;
+  (globalThis as any).fetch = async (url: string | URL, opts: RequestInit = {}) => String(url).includes('conversations.replies')
+    ? new Response(JSON.stringify({ ok: true, messages: [{ ts: '30.0', user: 'U0ASKER01', text: '<@U0BOT> mark the laptop as done for J-104' }] })) : fake(url, opts);
+  await POST(slackRequest({ type: 'event_callback', event_id: 'E31', authorizations: [{ user_id: 'U0BOT' }], event: { type: 'app_mention',
+    channel: 'C0REMIND', user: CONFIG.ROLES['People Ops'], ts: '30.2', thread_ts: '30.0', text: '<@U0BOT> sorry, change it from done to pending' } }));
+  await drain();
+  (globalThis as any).fetch = fake;
+  assert.equal(f.data.status['J-104::J04'].Status, 'Pending');
+});
+
+test('Chat status change: unknown step -> lists the open steps; outsiders cannot change the tracker', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-104', Name: 'TEST contractor (India)' })] });
+  await mention('mark it done for J-104');
+  assert.ok(f.calls.slack.some(m => /Which step for \*TEST contractor \(India\)\*/.test(m.text)));
+  await mention('mark the laptop as done for J-104', { user: 'U0RANDOM01' });
+  assert.ok(f.calls.slack.some(m => /Only People Ops and step owners/.test(m.text)));
+  assert.notEqual((f.data.status['J-104::J04'] || { Status: 'Pending' }).Status, 'Done');
 });
