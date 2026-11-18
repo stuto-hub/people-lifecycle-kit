@@ -80,7 +80,25 @@ export async function readTab(tab: string): Promise<string[][] | null> {
 
 function normalise(values: any[][]): string[][] {
   const head = (values[0] || []).map(h => String(h ?? '').trim());
-  return values.map((row, r) => row.map((v, c) => r > 0 && typeof v === 'number' && DATE_COLS.test(head[c] || '') ? serialToIso(v) : String(v ?? '')));
+  return values.map((row, r) => row.map((v, c) => {
+    if (r === 0 || !DATE_COLS.test(head[c] || '')) return String(v ?? '');
+    if (typeof v === 'number') return serialToIso(v);
+    return textDateToIso(String(v ?? ''));                 // a date typed as text ("25/11/2026") still counts
+  }));
+}
+
+const MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+/** "25/11/2026", "25-11-26", "25 Nov 2026", "Nov 25, 2026", "2026-11-25" -> 2026-11-25. Numbers are day/month unless impossible. Unreadable text is returned as is. */
+export function textDateToIso(s: string): string {
+  const t = s.trim(); if (!t) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const iso = (y: number, m: number, d: number) => (m >= 1 && m <= 12 && d >= 1 && d <= 31) ? (y < 100 ? 2000 + y : y) + '-' + pad(m) + '-' + pad(d) : t;
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if (m) return iso(+m[1], +m[2], +m[3]);
+  m = t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+  if (m) { const a = +m[1], b = +m[2]; return b > 12 && a <= 12 ? iso(+m[3], a, b) : iso(+m[3], b, a); }
+  m = t.toLowerCase().match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3})[a-z]*\.?,?\s+(\d{2,4})$/); if (m && MON.includes(m[2])) return iso(+m[3], MON.indexOf(m[2]) + 1, +m[1]);
+  m = t.toLowerCase().match(/^([a-z]{3})[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{2,4})$/); if (m && MON.includes(m[1])) return iso(+m[3], MON.indexOf(m[1]) + 1, +m[2]);
+  return t;
 }
 export const tabCsv = async (tab: string) => { const v = await readTab(tab); return v === null ? null : stringifyCsv(v); };
 

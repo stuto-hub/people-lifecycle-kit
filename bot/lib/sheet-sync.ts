@@ -32,9 +32,6 @@ export async function pollSheet(today = todayIso()): Promise<string[]> {
     if (!now) { log.push(tab + ': tab missing'); continue; }
     if (await ensureHiddenTab('_' + tab)) { await writeTab('_' + tab, now); log.push(tab + ': first run, snapshot created'); continue; }
     const seen = (await readTab('_' + tab)) || [];
-    // Snapshot saved by an older version with dates as displayed (e.g. 13/1/27): refresh it quietly, no reactions.
-    const dc = (seen[0] || []).map((h, i) => /^(day 0|added on)$/i.test(String(h).trim()) ? i : -1).filter(i => i >= 0);
-    if (seen.slice(1).some(r => dc.some(i => r[i] && !/^\d{4}-\d{2}-\d{2}$/.test(r[i])))) { await writeTab('_' + tab, now); log.push(tab + ': snapshot migrated to real dates'); continue; }
     log.push(...await fixIds(tab, now, seen));
     const changes = diffTracker(tab, stringifyCsv(seen), stringifyCsv(now));
     for (const c of changes) {
