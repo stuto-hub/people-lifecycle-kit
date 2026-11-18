@@ -1,6 +1,7 @@
 Flow,Days before,Message
 Joiner,7,"🗓️ *{name}* joins on {day0} (in 7 days). {@People Ops} order their laptop today and check the agreement is signed. {@Hiring coordinator} confirm the agreement went out."
 Joiner,5,"📦 *{name}* joins on {day0} (in 5 days). {@IT} please keep their laptop ready to dispatch today, so it arrives 2 days before day 0."
+Joiner,4,"💻 *{name}* joins in 4 days ({day0}). {@IT} please dispatch their laptop today so it arrives before day 0, and reply here with the tracking link."
 Joiner,3,"🤝 *{name}* joins in 3 days ({day0}). {@Buddy} you're their buddy: block 20 minutes on day 0 for a hello call. {@Lead} please share their first-week plan."
 Joiner,0,"🎉 *{name}* joins today! {@Lead} please introduce them in #introductions. {@Buddy} say hi and check they can log in. {@People Ops} welcome call today."
 Leaver,5,"📋 *{name}*'s last day is {day0} (in 5 days). {@Lead} please agree a handover owner and doc. {@People Ops} book the exit call."
