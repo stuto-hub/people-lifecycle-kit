@@ -80,7 +80,12 @@ export async function history(ev: SlackEvent): Promise<Turn[]> {
     if (!j || !j.ok) return [];
     let msgs: any[] = (j.messages || []).filter((m: any) => m.ts !== ev.ts && m.text && !m.text.startsWith('🧠') && !m.text.startsWith('Sorry, I hit a problem'));
     if (!ev.thread_ts) msgs = msgs.filter(m => Number(m.ts) > Number(ev.ts) - 3600).reverse();   // history is newest first
-    return msgs.slice(-8).map(m => ({ role: m.bot_id ? 'assistant' : 'user', content: m.text.replace(/<@[A-Z0-9]+>/g, '').trim() }));
+    // The bot's own tool results (✅ step marked, 📅 date preview, 🔔 nudge...) were real actions, not model claims: label them so the model never "corrects" them.
+    const ACTION = /^\s*(✅|📅|🔔|➡️|⬅️|✖️|❌|🤔|➕|:white_check_mark:|:date:|:bell:|:arrow_right:|:arrow_left:|:heavy_multiplication_x:|:x:|:thinking_face:|:heavy_plus_sign:)/;
+    return msgs.slice(-8).map(m => {
+      const text = m.text.replace(/<@[A-Z0-9]+>/g, '').trim();
+      return { role: m.bot_id ? 'assistant' : 'user', content: m.bot_id && ACTION.test(text) ? '[Done by the bot\'s tracker tools, already real in the Sheet/Slack] ' + text : text };
+    });
   } catch { return []; }
 }
 
@@ -223,7 +228,8 @@ export async function answerChat(ev: SlackEvent) {
     answer = await askClaude(question, kb, r, past, tracker || toolsBlock(d));
     if (tracker) {                                   // the readiness alert is never left to the model: it always leads
       const today = todayIso(), ps = peopleOf(d), tasks = buildTasks(d, today);
-      const risks = atRisk(named ? [named] : ps, tasks, today);
+      const namedNow = findPerson(question, ps);       // only the person this question is about, or everyone for a tracker-wide question
+      const risks = namedNow ? atRisk([namedNow], tasks, today) : isTrackerQuestion(question) && !PERSONAL.test(question) ? atRisk(ps, tasks, today) : [];
       if (risks.length && !/Serious escalation/i.test(answer)) answer = risks.map(riskLine).join('\n') + '\n\n' + answer;
     }
     await routeActions(r, ev.user, question, via);
