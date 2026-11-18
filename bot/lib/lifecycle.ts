@@ -145,7 +145,9 @@ export async function dailyRun({ today = todayIso(), dryRun = false, force = fal
     const n = out.filter(m => /nudge|overdue/.test(m.kind)).length, e = out.filter(m => /escalation|blocked/.test(m.kind)).length;
     if (slot !== 'morning') {                              // catch-up run: alerts channel + countdowns not posted yet today, no repeat DMs
       const seen = await postedToday();
-      const keep = out.filter(m => m.to === CONFIG.CHANNEL || (m.kind === 'countdown' && !seen.some(t => t.startsWith(m.text.split(' <')[0].slice(0, 60)))));
+      // Compare without the leading emoji: Slack stores it as a code (:closed_lock_with_key:), not the character.
+      const key = (t: string) => t.replace(/^\s*(:[a-z0-9_+-]+:|[^\w*]+)\s*/i, '').split(' <')[0].slice(0, 50);
+      const keep = out.filter(m => m.to === CONFIG.CHANNEL || (m.kind === 'countdown' && !seen.some(t => key(t) === key(m.text))));
       out.length = 0; out.push(...keep);
     }
     const c2 = out.filter(m => m.kind === 'countdown').length, n2 = out.filter(m => /nudge|overdue/.test(m.kind)).length;
