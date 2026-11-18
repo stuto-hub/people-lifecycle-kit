@@ -698,7 +698,7 @@ test('Catch-up runs (3:30 pm, 10 pm): alerts channel + countdowns not yet posted
                                      joinerRow({ ID: 'J-107', Name: 'Ann Lee', 'Day 0': '2026-11-19' })] });          // 3 days after T
   const fake = (globalThis as any).fetch;
   (globalThis as any).fetch = async (url: string | URL, opts: RequestInit = {}) => String(url).includes('conversations.history')
-    ? new Response(JSON.stringify({ ok: true, messages: [{ text: '🤝 *Ann Lee* joins in 3 days (19 Nov). <@X> you are their buddy' }] })) : fake(url, opts);
+    ? new Response(JSON.stringify({ ok: true, messages: [{ text: ':handshake: *Ann Lee* joins in 3 days (19 Nov). <@X> you are their buddy' }] })) : fake(url, opts);
   try {
     const out = await dailyRun({ today: T, slot: 'afternoon' });
     const countdowns = out.filter(m => m.kind === 'countdown').map(m => m.text);
