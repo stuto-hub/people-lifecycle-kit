@@ -131,8 +131,8 @@ export function readiness(people: Person[], tasks: Task[], today: string, out: M
 
 // ---------------- digest ----------------
 export function digest(people: Person[], tasks: Task[], peopleById: Record<string, Person>, today: string, out: Msg[], guides: Guide[] = []) {
-  const soon = people.filter(p => p['Day 0'] && isLive(p) && diffDays(p['Day 0'], today) >= 0 && diffDays(p['Day 0'], today) <= 14)
-    .map(p => '• ' + (p.Flow === 'Joiner' ? '➡️ joining ' : '⬅️ leaving ') + pretty(p['Day 0']) + ': ' + p.Name);
+  const soon = people.filter(p => p['Day 0'] && (isLive(p) || !p.Status) && diffDays(p['Day 0'], today) >= 0 && diffDays(p['Day 0'], today) <= 14)
+    .map(p => '• ' + (p.Flow === 'Joiner' ? '➡️ joining ' : '⬅️ leaving ') + pretty(p['Day 0']) + ': ' + p.Name + (p.Status ? '' : ' _(Status not set in the tracker: no nudges until it is Active)_'));
   const action = tasks.filter(t => t['Needs action']).map(t => {
     const p = peopleById[t.Person[0]];
     return '• ' + t.Health + ': ' + (t.Confidential ? 'confidential step' : t.Step) + ' for ' + (p ? p.Name : '?') + (t['Escalate to'] ? ' → ' + t['Escalate to'] : '');
