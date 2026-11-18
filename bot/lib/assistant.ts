@@ -171,6 +171,12 @@ export async function answerChat(ev: SlackEvent) {
   console.log('route:', JSON.stringify({ q: question.slice(0, 160), tagged: tagged.length, add: ADD_PERSON.test(question), nudge: NUDGE.test(question) }));
   if (tagged.length) return assignTask(ev, tagged, thread_ts);
   if (ADD_PERSON.test(question)) return previewAdd(ev, question, thread_ts);
+  if (ev.thread_ts && question.length < 120) {      // "India" / "1 Dec" in reply to "To add a new joiner I need the country"
+    const h = await history(ev);
+    const lastBot = [...h].reverse().find(m => m.role === 'assistant');
+    const asked = h.filter(m => m.role === 'user').map(m => m.content).reverse().find(t => ADD_PERSON.test(t));
+    if (asked && lastBot && /To add a new (joiner|leaver) I need/.test(lastBot.content)) return previewAdd(ev, asked + ', ' + question, thread_ts);
+  }
   let dateAsk = DATE_CHANGE.test(question) ? question : '';
   if (!dateAsk && ev.thread_ts && parseDate(question, todayIso())) {      // "this is the new date 14/1/2026" in the same thread
     const earlier = (await history(ev)).filter(m => m.role === 'user').map(m => m.content).join(' ');
