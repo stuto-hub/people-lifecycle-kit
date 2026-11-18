@@ -40,6 +40,12 @@ export async function pollSheet(today = todayIso()): Promise<string[]> {
     for (const c of changes) {
       log.push(tab + ' ' + c.row.ID + ': ' + (c.columns.length === 1 ? c.columns[0] + ' "' + c.oldValue + '" -> "' + c.value + '"' : 'new row'));
       await onTrackerChange(c, today);
+      const missing = [!String(c.row['Day 0'] || '').trim() && (tab === 'Joiners' ? 'start date (Day 0)' : 'last day (Day 0)'),
+                       !String(c.row.Status || '').trim() && 'Status (Active to start)'].filter(Boolean);
+      const isNew = c.columns.length !== 1;
+      if (missing.length && (isNew || /^(day 0|status)$/i.test(c.columns[0] || '')) && c.row.Name)
+        await send({ to: CONFIG.CHANNEL, kind: 'flag', text: '🚩 *' + c.row.Name + '* (' + c.row.ID + ') is in the ' + tab + ' tab but has no ' + missing.join(' and ') +
+          '. Nothing starts (owners, nudges, countdown) until ' + (missing.length > 1 ? 'they are' : 'it is') + ' filled in.' });
     }
     if (changes.length) await writeTab('_' + tab, (await readTab(tab)) || now);   // re-read: the bot may have written (resets, Added on)
     else log.push(tab + ': no changes');
