@@ -426,6 +426,9 @@ test('Google Sheet: edits typed in the Sheet are spotted and handled once; the b
     assert.ok(await setCell('J-201', 'J01', 'Done'));
     assert.equal(tabs.Joiners[1][head.findIndex(h => h.startsWith('J01'))], 'Done');
     assert.match((await pollSheet(T)).join(' '), /Joiners: no changes/, "the bot's own writes are not mistaken for edits");
+    tabs.Joiners.push(['J-202', 'Jay Davis', 'USA', 'Employee', '', '', '', '', '', '', '', ...steps.map(() => 'Pending')]);
+    assert.match((await pollSheet(T)).join(' '), /J-202: new row/);
+    assert.ok(f.calls.slack.some(m => /\*Jay Davis\* \(J-202\) is in the Joiners tab but has no start date \(Day 0\) and Status/.test(m.text)), 'missing date and status flagged');
     const { readTabs } = await import('../lib/sheets.js');
     const all = await readTabs(['Joiners', 'Leavers', 'Tools']);
     assert.equal(all.Joiners![1][0], 'J-201'); assert.equal(all.Joiners![1][4], '2026-11-30', 'date read as a date');
