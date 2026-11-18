@@ -304,7 +304,9 @@ async function taskButton(payload: any, a: any) {
 }
 
 // ---------------- "X's start date moves to 4 Dec" -> preview -> Confirm ----------------
-const DATE_CHANGE = /\b(start date|joining date|date of joining|doj|day 0|last day|leaving date|last working day)\b.*\b(move|moves|moved|moving|change|changes|changed|changing|shift|shifts|shifted|postpone[sd]?|prepone[sd]?|push(ed)?|is now|now on)\b/i;
+const DATE_WORD = String.raw`(start(ing)?\s+date|jo[a-z]{0,4}n[a-z]{0,3}\s+date|date\s+of\s+jo[a-z]*|doj|day\s*0|last\s+(working\s+)?day|leaving\s+date|exit\s+date)`;
+const DATE_VERB = String.raw`(move[sd]?|moving|change[sd]?|changing|shift(s|ed)?|postpone[sd]?|prepone[sd]?|push(ed)?|is\s+now|now\s+on|update[sd]?|updating|set|reschedule[sd]?)`;
+const DATE_CHANGE = { test: (q: string) => !/\?\s*$/.test(q) && (new RegExp('\\b' + DATE_WORD + '\\b.*\\b' + DATE_VERB + '\\b', 'i').test(q) || new RegExp('\\b' + DATE_VERB + '\\b.*\\b' + DATE_WORD + '\\b.*\\bto\\b', 'i').test(q)) };
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 /**
