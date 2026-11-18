@@ -14,7 +14,7 @@ import { sheetOn } from './sheets.js';
 import { pollSheet } from './sheet-sync.js';
 import { trackerBlock, isTrackerQuestion, toolsBlock } from './tracker-context.js';
 import { addDays } from './core.js';
-import { owner } from './lifecycle.js';
+import { owner, atRisk, riskLine } from './lifecycle.js';
 import { pretty, diffDays } from './core.js';
 import type { Person, Step } from './types.js';
 import { send, postMessage, respond, slackApi, slackGet } from './slack.js';
@@ -146,6 +146,7 @@ export async function updateRequest(ev: SlackEvent, p: Person, thread_ts?: strin
   const label = (t: any) => t.Confidential && !inDm ? 'a confidential step' : '*' + t.Step + '*';
   const head = (p.Flow === 'Joiner' ? '➡️ ' : '⬅️ ') + '*' + p.Name + '* (' + p.id + ', ' + p.Flow.toLowerCase() + ', day 0 ' + pretty(p['Day 0']) + ' ' + p['Day 0'].slice(0, 4) + ', ' + p.Status + '): ' + done.length + ' of ' + mine.length + ' steps done';
   if (!open.length) return head + '\nEverything is done 🎉';
+  const risk = atRisk([p], mine, today)[0];
   const owners = new Set<string>();
   const lines = open.map(t => {
     const o = owner(t['Owner role'], p); owners.add(o.id);
@@ -158,7 +159,7 @@ export async function updateRequest(ev: SlackEvent, p: Person, thread_ts?: strin
     await send({ to: o.id, kind: 'nudge', taskId: t._id, url: t._url, confidential: t.Confidential,
       text: '🔔 <@' + ev.user + '> asked for an update: ' + (t.Confidential ? 'a confidential step' : '*' + t.Step + '*') + ' for *' + p.Name + '* (due ' + pretty(t.Due) + ').' });
   }
-  return head + '\n*Open (' + open.length + ')*\n' + lines.join('\n') +
+  return (risk ? riskLine(risk) + '\n' : '') + head + '\n*Open (' + open.length + ')*\n' + lines.join('\n') +
     (done.length ? '\n*Done (' + done.length + ')*: ' + done.map(t => t.Confidential && !inDm ? 'a confidential step' : t.Step).join(', ') : '') +
     '\n' + [...owners].map(o => '<@' + o + '>').join(' ') + ' please update this thread or click *Mark done* in your DM. <' + sheetLink(p.Flow === 'Joiner' ? 'joiners.csv' : 'leavers.csv') + '|Tracker>';
 }
@@ -167,6 +168,7 @@ export async function answerChat(ev: SlackEvent) {
   const question = ev.text.replace(/<@[A-Z0-9]+>/g, '').trim();
   const thread_ts = ev.type === 'app_mention' ? (ev.thread_ts || ev.ts) : ev.thread_ts;
   const tagged = taggedPeople(ev);
+  console.log('route:', JSON.stringify({ q: question.slice(0, 160), tagged: tagged.length, add: ADD_PERSON.test(question), nudge: NUDGE.test(question) }));
   if (tagged.length) return assignTask(ev, tagged, thread_ts);
   if (ADD_PERSON.test(question)) return previewAdd(ev, question, thread_ts);
   let dateAsk = DATE_CHANGE.test(question) ? question : '';
@@ -213,6 +215,11 @@ export async function answerChat(ev: SlackEvent) {
     const followUp = past.length && (m.matched === 'GAP' || FOLLOWUP.test(question));
     const r = tracker ? { ...m, matched: 'TRACKER', action: '' } : followUp ? { ...m, matched: 'FOLLOW_UP', action: '' } : m;
     answer = await askClaude(question, kb, r, past, tracker || toolsBlock(d));
+    if (tracker) {                                   // the readiness alert is never left to the model: it always leads
+      const today = todayIso(), ps = peopleOf(d), tasks = buildTasks(d, today);
+      const risks = atRisk(named ? [named] : ps, tasks, today);
+      if (risks.length && !/Serious escalation/i.test(answer)) answer = risks.map(riskLine).join('\n') + '\n\n' + answer;
+    }
     await routeActions(r, ev.user, question, via);
   } catch (err: any) {
     console.error(err);
@@ -324,7 +331,7 @@ export async function previewDateChange(ev: SlackEvent, p: Person, iso: string, 
   const list = affected(p, iso, d.steps).map(a => '• ' + (a.s.Confidential ? 'a confidential step' : a.s.Step) + ' → <@' + a.o.id + '>, new due ' + pretty(a.due)).join('\n');
   const value = JSON.stringify({ id: p.id, iso, r: ev.user });
   const past = iso < todayIso() ? '\n⚠️ ' + pretty(iso) + ' ' + iso.slice(0, 4) + ' is in the past. If you meant another year, press Cancel and send it again.' : '';
-  const text = '📅 Move *' + p.Name + '*\'s ' + what + ' from *' + pretty(p['Day 0']) + '* to *' + pretty(iso) + ' ' + iso.slice(0, 4) + '*?' + past + '\nOn confirm I will update the tracker, set these back to Pending and tag the owners:\n' + (list || '• (no date-dependent steps)');
+  const text = '📅 Move *' + p.Name + '*\'s ' + what + ' from *' + (p['Day 0'] ? pretty(p['Day 0']) + ' ' + p['Day 0'].slice(0, 4) : 'no date') + '* to *' + pretty(iso) + ' ' + iso.slice(0, 4) + '*?' + past + '\nOn confirm I will update the tracker, set these back to Pending and tag the owners:\n' + (list || '• (no date-dependent steps)');
   return postMessage({ channel: ev.channel, thread_ts, text, blocks: [
     { type: 'section', text: { type: 'mrkdwn', text } },
     { type: 'actions', elements: [
@@ -406,8 +413,12 @@ export function stepFor(text: string, steps: Step[]): Step | undefined {
 }
 
 // ---------------- "New joiner starting 1 Jan 2027, full time in India, add them to the sheet" ----------------
-const ADD_PERSON = { test: (q: string) => /\b(new (joiner|hire|starter|leaver|employee|contractor)|someone|a person)\b/i.test(q) &&
-  (/\b(add|put|create|enter|log)\b.*\b(sheet|tracker)\b/i.test(q) || (/\b(starting|starts|joining|is leaving|leaves on|last day is)\b/i.test(q) && /\d/.test(q) && !/\?\s*$/.test(q))) };
+const ADD_TO_SHEET = /\b(add|put|create|enter|log)\b.*\b(sheet|tracker)\b/i;
+const START_WORDS = /\b(starting|starts|joining|joins|is leaving|leaves on|last day is)\b/i;
+const ADD_PERSON = { test: (q: string) =>
+  (/\b(new (joiner|hire|starter|leaver|employee|contractor)|someone|a person)\b/i.test(q) &&
+    (ADD_TO_SHEET.test(q) || (START_WORDS.test(q) && /\d/.test(q) && !/\?\s*$/.test(q)))) ||
+  (ADD_TO_SHEET.test(q) && START_WORDS.test(q) && /\d/.test(q)) };   // "xyz is joining on 30th Nov 2026, pls add this to the sheet"
 const COUNTRIES = ['India', 'Brazil', 'Spain', 'Kenya', 'United States', 'USA', 'UK', 'United Kingdom', 'Germany', 'France', 'Mexico', 'Argentina', 'Colombia',
   'Nigeria', 'South Africa', 'Philippines', 'Indonesia', 'Canada', 'Australia', 'Portugal', 'Poland', 'Netherlands', 'Italy', 'Egypt', 'Pakistan', 'Vietnam', 'Chile', 'Peru', 'Ireland', 'Singapore'];
 
@@ -418,6 +429,7 @@ export async function parseNewPerson(text: string, today: string) {
   const worker = /\b(full[- ]?time|employee|fte|permanent)\b/i.test(text) ? 'Employee' : /\b(contract(or)?|freelanc|part[- ]?time)\w*/i.test(text) ? 'Contractor' : '';
   const day0 = parseDate(text, today);
   let name = (text.match(/\b(?:named|called|name is)\s+([A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)/) || [])[1] || '';
+  if (!name) name = (text.replace(/<@[^>]+>/g, '').trim().match(/^([A-Za-z][\w'-]*(?:\s+[A-Z][\w'-]*)?)\s+(?:is\s+)?(?:joining|starting|starts|joins|leaving)\b/) || [])[1] || '';
   if (!name && env('ANTHROPIC_API_KEY')) {
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',

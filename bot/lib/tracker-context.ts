@@ -5,7 +5,7 @@
  */
 import { CONFIG } from './config.js';
 import { buildTasks } from './store.js';
-import { owner } from './lifecycle.js';
+import { owner, atRisk, riskLine } from './lifecycle.js';
 import { pretty, diffDays } from './core.js';
 import type { Data, Person } from './types.js';
 
@@ -41,6 +41,8 @@ function personBlock(d: Data, p: Person, today: string, inPrivate: boolean): str
   }
   const done = tasks.filter(t => t.Status === 'Done').length;
   lines.push('   Summary: ' + done + ' of ' + tasks.length + ' steps done, ' + (tasks.length - done) + ' open.');
+  const risk = atRisk([p], tasks, today)[0];
+  if (risk) lines.push('   READINESS ALERT (put this first, word for word): ' + riskLine(risk).replace(/\*/g, ''));
   return lines.join('\n');
 }
 
@@ -81,6 +83,7 @@ export function trackerBlock(d: Data, today: string, inPrivate: boolean): string
 
 export const TRACKER_RULES = [
   'Tracker questions (people joining or leaving, what is pending or done, who owns a step, laptops, accesses, tools):',
+  '- If a person has a READINESS ALERT line, start the answer about them with that alert.',
   '- Answer ONLY from the TRACKER block. Statuses there are exact: never change, guess or summarise them away.',
   '- "What is pending / what is done" for a person: list EVERY open step (with status, due date and owner tag) and EVERY done step. Do not drop steps.',
   '- A specific step ("have we ordered the laptop?"): give that step\'s exact status, due date and owner for each relevant person.',

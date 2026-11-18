@@ -89,6 +89,46 @@ export function countdown(people: Person[], reminders: Row[], today: string, out
   }
 }
 
+// ---------------- readiness: day 0 is close but most of the prep is still open ----------------
+export const READINESS_DAYS = 10;
+export interface AtRisk { p: Person; left: number; pre: Task[]; pending: Task[] }
+
+/** Joiners/leavers whose day 0 is within 10 days and at least half the steps due by day 0 are not Done. Blank status counts (they are still coming). */
+export function atRisk(people: Person[], tasks: Task[], today: string): AtRisk[] {
+  const res: AtRisk[] = [];
+  for (const p of people) {
+    if (!p['Day 0'] || /cancel|done|closed/i.test(p.Status || '')) continue;
+    const left = diffDays(p['Day 0'], today);
+    if (left < 0 || left > READINESS_DAYS) continue;
+    const pre = tasks.filter(t => t.Person[0] === p.id && t.Due && t.Due <= p['Day 0']);
+    const pending = pre.filter(t => t.Status !== 'Done');
+    if (pre.length && pending.length * 2 >= pre.length) res.push({ p, left, pre, pending });
+  }
+  return res;
+}
+
+export function riskLine(r: AtRisk): string {
+  return '🚨 *Serious escalation:* *' + r.p.Name + '* ' + (r.p.Flow === 'Joiner' ? 'joins' : 'leaves') + ' ' +
+    (r.left === 0 ? 'today' : 'in ' + r.left + ' day' + (r.left > 1 ? 's' : '')) + ' (' + pretty(r.p['Day 0']) + ') but ' + r.pending.length + ' of ' + r.pre.length +
+    ' steps due by day 0 are still pending.';
+}
+
+export function readiness(people: Person[], tasks: Task[], today: string, out: Msg[]) {
+  for (const r of atRisk(people, tasks, today)) {
+    const owners = new Set<string>();
+    const lines = r.pending.sort((a, b) => a.Due.localeCompare(b.Due)).map(t => {
+      const o = owner(t['Owner role'], r.p); owners.add(o.id);
+      const late = diffDays(today, t.Due);
+      return '• ' + (t.Confidential ? 'a confidential step' : t.Step) + ': ' + (late > 0 ? late + ' day' + (late > 1 ? 's' : '') + ' overdue' : late === 0 ? 'due today' : 'due ' + pretty(t.Due)) + ' → <@' + o.id + '>';
+    });
+    const lead = CONFIG.ROLES['People Ops lead'] || CONFIG.ROLES['People Ops'];
+    const text = riskLine(r) + (r.p.Status ? '' : ' _(Status is blank in the tracker, so the normal nudges are off.)_') + '\n' + lines.join('\n') +
+      '\n<@' + lead + '> please step in today. Owners: please update the tracker or reply here. <' + sheetLink(r.p.Flow === 'Joiner' ? 'joiners.csv' : 'leavers.csv') + '|Tracker>';
+    out.push({ to: CONFIG.CHANNEL, kind: 'escalation-readiness', text });
+    out.push({ to: CONFIG.REMINDERS, kind: 'readiness', text });
+  }
+}
+
 // ---------------- digest ----------------
 export function digest(people: Person[], tasks: Task[], peopleById: Record<string, Person>, today: string, out: Msg[], guides: Guide[] = []) {
   const soon = people.filter(p => p['Day 0'] && isLive(p) && diffDays(p['Day 0'], today) >= 0 && diffDays(p['Day 0'], today) <= 14)
@@ -140,6 +180,7 @@ export async function dailyRun({ today = todayIso(), dryRun = false, force = fal
     const stepsByName = Object.fromEntries(d.steps.map(s => [s.Step, s]));
     planNudges(tasks, peopleById, stepsByName, today, out);
     countdown(people, d.reminders || [], today, out);
+    readiness(people, tasks, today, out);
     digest(people, tasks, peopleById, today, out, d.guides);
     const c = out.filter(m => m.kind === 'countdown').length;
     const n = out.filter(m => /nudge|overdue/.test(m.kind)).length, e = out.filter(m => /escalation|blocked/.test(m.kind)).length;
@@ -147,11 +188,11 @@ export async function dailyRun({ today = todayIso(), dryRun = false, force = fal
       const seen = await postedToday();
       // Compare without the leading emoji: Slack stores it as a code (:closed_lock_with_key:), not the character.
       const key = (t: string) => t.replace(/^\s*(:[a-z0-9_+-]+:|[^\w*]+)\s*/i, '').split(' <')[0].slice(0, 50);
-      const keep = out.filter(m => m.to === CONFIG.CHANNEL || (m.kind === 'countdown' && !seen.some(t => key(t) === key(m.text))));
+      const keep = out.filter(m => m.to === CONFIG.CHANNEL || (/^(countdown|readiness)$/.test(m.kind) && !seen.some(t => key(t) === key(m.text))));
       out.length = 0; out.push(...keep);
     }
     const c2 = out.filter(m => m.kind === 'countdown').length, n2 = out.filter(m => /nudge|overdue/.test(m.kind)).length;
-    out.push({ to: CONFIG.CHANNEL, kind: 'heartbeat', text: heartbeat(today, slot) + ': ' + n2 + ' nudges, ' + e + ' escalations, ' + c2 + ' countdown reminders.' });
+    out.push({ to: CONFIG.CHANNEL, kind: 'heartbeat', text: heartbeat(today, slot) + ': ' + n2 + ' nudges, ' + e + ' escalations, ' + c2 + ' countdown reminders, ' + out.filter(m => m.kind === 'readiness').length + ' readiness alerts.' });
     void c; void n;
     if (only) { const keep = out.filter(m => m.kind === only); out.length = 0; out.push(...keep); }
     if (dryRun) out.forEach(m => console.log('[preview] ' + m.kind + ' -> ' + m.to + ': ' + m.text.replace(/\n/g, ' ⏎ ')));
