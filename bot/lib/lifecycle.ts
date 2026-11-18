@@ -109,17 +109,30 @@ export function digest(people: Person[], tasks: Task[], peopleById: Record<strin
 }
 
 // ---------------- the morning run ----------------
-/** The evening backup run skips if the morning run already posted its ✅ heartbeat today, so nobody is nudged twice. */
-async function alreadyRan(today: string): Promise<boolean> {
+/** Run slots (IST): 9:00 full run; 15:30 and 22:00 catch-up runs (alerts channel + countdowns not yet posted today, no repeat DMs). */
+export const SLOTS: Record<string, string> = { morning: '9:00 run', afternoon: '3:30 pm run', evening: '10 pm run' };
+const heartbeat = (today: string, slot: string) => '✅ Lifecycle bot ran ' + pretty(today) + ' (' + (SLOTS[slot] || slot) + ')';
+
+/** A slot that already posted its ✅ heartbeat today is skipped, so a delayed or repeated schedule never double-sends. */
+async function alreadyRan(today: string, slot: string): Promise<boolean> {
   try {
     const j = await slackGet('conversations.history', { channel: CONFIG.CHANNEL, limit: '50' });
-    return !!(j && j.ok && (j.messages || []).some((m: any) => String(m.text || '').startsWith('✅ Lifecycle bot ran ' + pretty(today))));
+    return !!(j && j.ok && (j.messages || []).some((m: any) => String(m.text || '').startsWith(heartbeat(today, slot))));
   } catch { return false; }
 }
 
-export async function dailyRun({ today = todayIso(), dryRun = false, force = false, only = '' } = {}): Promise<Msg[]> {
+/** Countdown texts already posted in #reminders today (so the catch-up runs only post what is new). */
+async function postedToday(): Promise<string[]> {
+  try {
+    const since = new Date(); since.setUTCHours(since.getUTCHours() - 18);
+    const j = await slackGet('conversations.history', { channel: CONFIG.REMINDERS, oldest: String(since.getTime() / 1000), limit: '100' });
+    return j && j.ok ? (j.messages || []).map((m: any) => String(m.text || '')) : [];
+  } catch { return []; }
+}
+
+export async function dailyRun({ today = todayIso(), dryRun = false, force = false, only = '', slot = 'morning' } = {}): Promise<Msg[]> {
   const out: Msg[] = [];
-  if (!dryRun && !force && await alreadyRan(today)) { console.log('Already ran today (' + today + '); skipping the backup run.'); return out; }
+  if (!dryRun && !force && await alreadyRan(today, slot)) { console.log('The ' + slot + ' run already went out today (' + today + '); skipping.'); return out; }
   try {
     const d = await load();
     const people = peopleOf(d), tasks = buildTasks(d, today);
@@ -130,7 +143,14 @@ export async function dailyRun({ today = todayIso(), dryRun = false, force = fal
     digest(people, tasks, peopleById, today, out, d.guides);
     const c = out.filter(m => m.kind === 'countdown').length;
     const n = out.filter(m => /nudge|overdue/.test(m.kind)).length, e = out.filter(m => /escalation|blocked/.test(m.kind)).length;
-    out.push({ to: CONFIG.CHANNEL, kind: 'heartbeat', text: '✅ Lifecycle bot ran ' + pretty(today) + ': ' + n + ' nudges, ' + e + ' escalations, ' + c + ' countdown reminders.' });
+    if (slot !== 'morning') {                              // catch-up run: alerts channel + countdowns not posted yet today, no repeat DMs
+      const seen = await postedToday();
+      const keep = out.filter(m => m.to === CONFIG.CHANNEL || (m.kind === 'countdown' && !seen.some(t => t.startsWith(m.text.split(' <')[0].slice(0, 60)))));
+      out.length = 0; out.push(...keep);
+    }
+    const c2 = out.filter(m => m.kind === 'countdown').length, n2 = out.filter(m => /nudge|overdue/.test(m.kind)).length;
+    out.push({ to: CONFIG.CHANNEL, kind: 'heartbeat', text: heartbeat(today, slot) + ': ' + n2 + ' nudges, ' + e + ' escalations, ' + c2 + ' countdown reminders.' });
+    void c; void n;
     if (only) { const keep = out.filter(m => m.kind === only); out.length = 0; out.push(...keep); }
     if (dryRun) out.forEach(m => console.log('[preview] ' + m.kind + ' -> ' + m.to + ': ' + m.text.replace(/\n/g, ' ⏎ ')));
     else for (const m of out) await send(m);
