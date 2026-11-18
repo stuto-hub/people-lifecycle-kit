@@ -144,7 +144,7 @@ export async function updateRequest(ev: SlackEvent, p: Person, thread_ts?: strin
   const mine = buildTasks(d, today).filter(t => t.Person[0] === p.id).sort((a, b) => a.Due.localeCompare(b.Due));
   const open = mine.filter(t => t.Status !== 'Done'), done = mine.filter(t => t.Status === 'Done');
   const label = (t: any) => t.Confidential && !inDm ? 'a confidential step' : '*' + t.Step + '*';
-  const head = (p.Flow === 'Joiner' ? '➡️ ' : '⬅️ ') + '*' + p.Name + '* (' + p.id + ', ' + p.Flow.toLowerCase() + ', day 0 ' + pretty(p['Day 0']) + ' ' + p['Day 0'].slice(0, 4) + ', ' + p.Status + '): ' + done.length + ' of ' + mine.length + ' steps done';
+  const head = (p.Flow === 'Joiner' ? '➡️ ' : '⬅️ ') + '*' + p.Name + '* (' + p.id + ', ' + p.Flow.toLowerCase() + ', day 0 ' + pretty(p['Day 0']) + ' ' + p['Day 0'].slice(0, 4) + ', ' + (p.Status || 'Status not set in the tracker') + '): ' + done.length + ' of ' + mine.length + ' steps done';
   if (!open.length) return head + '\nEverything is done 🎉';
   const risk = atRisk([p], mine, today)[0];
   const owners = new Set<string>();
@@ -232,8 +232,15 @@ export async function answerChat(ev: SlackEvent) {
     answer = 'Sorry, I hit a problem answering that. People Ops has been told. You can also check the tracker: ' + sheetLink();
     await send({ to: CONFIG.CHANNEL, kind: 'error', text: '❌ Chat answer failed for <@' + ev.user + '>: ' + err.message });
   }
+  answer = slackSafe(answer);
   if (thinking && thinking.ok) return slackApi('chat.update', { channel: ev.channel, ts: thinking.ts, text: answer });
   return postMessage({ channel: ev.channel, text: answer, thread_ts });
+}
+
+/** A bare "<" (e.g. "< 2 days") starts a Slack link and hides the rest of the message; keep real <@user>, <#chan>, <url|text>. */
+export function slackSafe(t: string): string {
+  return t.split(/(<(?:[@#!]|https?:\/\/|mailto:)[^<>\n]*>)/).map((part, i) => i % 2 ? part
+    : part.replace(/&(?!(amp|lt|gt);)/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')).join('');
 }
 
 // ---------------- /people: fast and rule-based (Slack allows 3 seconds) ----------------
