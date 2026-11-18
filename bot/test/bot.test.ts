@@ -692,3 +692,18 @@ test('Chat status change: unknown step -> lists the open steps; outsiders cannot
   assert.ok(f.calls.slack.some(m => /Only People Ops and step owners/.test(m.text)));
   assert.notEqual((f.data.status['J-104::J04'] || { Status: 'Pending' }).Status, 'Done');
 });
+
+test('Catch-up runs (3:30 pm, 10 pm): alerts channel + countdowns not yet posted today; no repeat DMs', async () => {
+  const f = installFakes({ joiners: [joinerRow({ ID: 'J-106', Name: 'Jay Davis', 'Day 0': '2026-11-21' }),          // 5 days after T
+                                     joinerRow({ ID: 'J-107', Name: 'Ann Lee', 'Day 0': '2026-11-19' })] });          // 3 days after T
+  const fake = (globalThis as any).fetch;
+  (globalThis as any).fetch = async (url: string | URL, opts: RequestInit = {}) => String(url).includes('conversations.history')
+    ? new Response(JSON.stringify({ ok: true, messages: [{ text: '🤝 *Ann Lee* joins in 3 days (19 Nov). <@X> you are their buddy' }] })) : fake(url, opts);
+  try {
+    const out = await dailyRun({ today: T, slot: 'afternoon' });
+    const countdowns = out.filter(m => m.kind === 'countdown').map(m => m.text);
+    assert.equal(countdowns.length, 1); assert.match(countdowns[0], /Jay Davis/, 'Ann Lee was already posted this morning');
+    assert.ok(out.every(m => m.to === CONFIG.CHANNEL || m.kind === 'countdown'), 'no DMs in a catch-up run');
+    assert.ok(f.calls.slack.some(m => /Lifecycle bot ran .* \(3:30 pm run\)/.test(m.text)));
+  } finally { (globalThis as any).fetch = fake; }
+});
