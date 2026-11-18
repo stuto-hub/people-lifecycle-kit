@@ -22,7 +22,7 @@ export async function GET(request: Request): Promise<Response> {
     if (job === 'poll') return text((await pollSheet(today)).join('\n'));
     if (job === 'resync') return text((await resyncSheet()).join('\n'));
     if (job === 'daily' || job === 'countdown' || job === 'preview') {
-      const out = await dailyRun({ today, dryRun: job === 'preview', force: q.get('force') === 'true' || job === 'countdown', only: job === 'countdown' ? 'countdown' : '' });
+      const out = await dailyRun({ today, dryRun: job === 'preview', force: q.get('force') === 'true' || job === 'countdown', only: job === 'countdown' ? 'countdown' : '', slot: q.get('slot') || 'morning' });
       return text(job + ': ' + out.length + ' messages\n' + out.map(m => m.kind + ' -> ' + m.to + ': ' + m.text.replace(/\n/g, ' ')).join('\n'));
     }
     return text('unknown job ' + job, 400);
