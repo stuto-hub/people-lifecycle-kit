@@ -168,6 +168,7 @@ export async function answerChat(ev: SlackEvent) {
   const question = ev.text.replace(/<@[A-Z0-9]+>/g, '').trim();
   const thread_ts = ev.type === 'app_mention' ? (ev.thread_ts || ev.ts) : ev.thread_ts;
   const tagged = taggedPeople(ev);
+  console.log('route:', JSON.stringify({ q: question.slice(0, 160), tagged: tagged.length, add: ADD_PERSON.test(question), nudge: NUDGE.test(question) }));
   if (tagged.length) return assignTask(ev, tagged, thread_ts);
   if (ADD_PERSON.test(question)) return previewAdd(ev, question, thread_ts);
   let dateAsk = DATE_CHANGE.test(question) ? question : '';
@@ -214,6 +215,11 @@ export async function answerChat(ev: SlackEvent) {
     const followUp = past.length && (m.matched === 'GAP' || FOLLOWUP.test(question));
     const r = tracker ? { ...m, matched: 'TRACKER', action: '' } : followUp ? { ...m, matched: 'FOLLOW_UP', action: '' } : m;
     answer = await askClaude(question, kb, r, past, tracker || toolsBlock(d));
+    if (tracker) {                                   // the readiness alert is never left to the model: it always leads
+      const today = todayIso(), ps = peopleOf(d), tasks = buildTasks(d, today);
+      const risks = atRisk(named ? [named] : ps, tasks, today);
+      if (risks.length && !/Serious escalation/i.test(answer)) answer = risks.map(riskLine).join('\n') + '\n\n' + answer;
+    }
     await routeActions(r, ev.user, question, via);
   } catch (err: any) {
     console.error(err);
