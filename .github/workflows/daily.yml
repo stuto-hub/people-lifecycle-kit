@@ -1,13 +1,18 @@
 name: Daily lifecycle run
 
+# Three runs a day (IST). GitHub can start scheduled runs 5-20 minutes late.
+#   09:00 IST  full run: DM nudges with Mark done, escalations, countdown in #reminders, summary in #people-ops-alerts
+#   15:30 IST  catch-up: summary + escalations in #people-ops-alerts, countdowns not yet posted today (no repeat DMs)
+#   22:00 IST  catch-up: same as 15:30
 on:
   schedule:
     - cron: '30 3 * * *'        # 03:30 UTC = 09:00 IST
-    - cron: '30 15 * * *'       # 15:30 UTC = 21:00 IST backup (skipped if the morning run already went out)
+    - cron: '0 10 * * *'        # 10:00 UTC = 15:30 IST
+    - cron: '30 16 * * *'       # 16:30 UTC = 22:00 IST
   workflow_dispatch:            # "Run workflow" button in the Actions tab
     inputs:
       mode:
-        description: 'daily = nudges + countdown + digest, countdown = only the 5/3/0-day reminders, preview = print only'
+        description: 'daily = full run, countdown = only the countdown reminders, preview = print only'
         type: choice
         options: [daily, countdown, preview]
         default: daily
@@ -26,8 +31,14 @@ jobs:
     steps:
       - name: Run the bot
         run: |
-          curl -fsS --max-time 90 "https://people-lifecycle-kit-bot.vercel.app/api/cron?job=${MODE}&today=${TODAY}&force=${FORCE}&key=${KEY}"
+          case "$SCHEDULE" in
+            "0 10 * * *")  SLOT=afternoon ;;
+            "30 16 * * *") SLOT=evening ;;
+            *)             SLOT=morning ;;
+          esac
+          curl -fsS --max-time 90 "https://people-lifecycle-kit-bot.vercel.app/api/cron?job=${MODE}&slot=${SLOT}&today=${TODAY}&force=${FORCE}&key=${KEY}"
         env:
+          SCHEDULE: ${{ github.event.schedule }}
           MODE: ${{ inputs.mode || 'daily' }}
           TODAY: ${{ inputs.today }}
           FORCE: ${{ github.event_name == 'workflow_dispatch' }}
