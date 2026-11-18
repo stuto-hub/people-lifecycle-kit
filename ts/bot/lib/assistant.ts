@@ -14,7 +14,7 @@ import { sheetOn } from './sheets.js';
 import { pollSheet } from './sheet-sync.js';
 import { trackerBlock, isTrackerQuestion, toolsBlock } from './tracker-context.js';
 import { addDays } from './core.js';
-import { owner } from './lifecycle.js';
+import { owner, atRisk, riskLine } from './lifecycle.js';
 import { pretty, diffDays } from './core.js';
 import type { Person, Step } from './types.js';
 import { send, postMessage, respond, slackApi, slackGet } from './slack.js';
@@ -146,6 +146,7 @@ export async function updateRequest(ev: SlackEvent, p: Person, thread_ts?: strin
   const label = (t: any) => t.Confidential && !inDm ? 'a confidential step' : '*' + t.Step + '*';
   const head = (p.Flow === 'Joiner' ? '➡️ ' : '⬅️ ') + '*' + p.Name + '* (' + p.id + ', ' + p.Flow.toLowerCase() + ', day 0 ' + pretty(p['Day 0']) + ' ' + p['Day 0'].slice(0, 4) + ', ' + p.Status + '): ' + done.length + ' of ' + mine.length + ' steps done';
   if (!open.length) return head + '\nEverything is done 🎉';
+  const risk = atRisk([p], mine, today)[0];
   const owners = new Set<string>();
   const lines = open.map(t => {
     const o = owner(t['Owner role'], p); owners.add(o.id);
@@ -158,7 +159,7 @@ export async function updateRequest(ev: SlackEvent, p: Person, thread_ts?: strin
     await send({ to: o.id, kind: 'nudge', taskId: t._id, url: t._url, confidential: t.Confidential,
       text: '🔔 <@' + ev.user + '> asked for an update: ' + (t.Confidential ? 'a confidential step' : '*' + t.Step + '*') + ' for *' + p.Name + '* (due ' + pretty(t.Due) + ').' });
   }
-  return head + '\n*Open (' + open.length + ')*\n' + lines.join('\n') +
+  return (risk ? riskLine(risk) + '\n' : '') + head + '\n*Open (' + open.length + ')*\n' + lines.join('\n') +
     (done.length ? '\n*Done (' + done.length + ')*: ' + done.map(t => t.Confidential && !inDm ? 'a confidential step' : t.Step).join(', ') : '') +
     '\n' + [...owners].map(o => '<@' + o + '>').join(' ') + ' please update this thread or click *Mark done* in your DM. <' + sheetLink(p.Flow === 'Joiner' ? 'joiners.csv' : 'leavers.csv') + '|Tracker>';
 }
@@ -324,7 +325,7 @@ export async function previewDateChange(ev: SlackEvent, p: Person, iso: string, 
   const list = affected(p, iso, d.steps).map(a => '• ' + (a.s.Confidential ? 'a confidential step' : a.s.Step) + ' → <@' + a.o.id + '>, new due ' + pretty(a.due)).join('\n');
   const value = JSON.stringify({ id: p.id, iso, r: ev.user });
   const past = iso < todayIso() ? '\n⚠️ ' + pretty(iso) + ' ' + iso.slice(0, 4) + ' is in the past. If you meant another year, press Cancel and send it again.' : '';
-  const text = '📅 Move *' + p.Name + '*\'s ' + what + ' from *' + pretty(p['Day 0']) + '* to *' + pretty(iso) + ' ' + iso.slice(0, 4) + '*?' + past + '\nOn confirm I will update the tracker, set these back to Pending and tag the owners:\n' + (list || '• (no date-dependent steps)');
+  const text = '📅 Move *' + p.Name + '*\'s ' + what + ' from *' + (p['Day 0'] ? pretty(p['Day 0']) + ' ' + p['Day 0'].slice(0, 4) : 'no date') + '* to *' + pretty(iso) + ' ' + iso.slice(0, 4) + '*?' + past + '\nOn confirm I will update the tracker, set these back to Pending and tag the owners:\n' + (list || '• (no date-dependent steps)');
   return postMessage({ channel: ev.channel, thread_ts, text, blocks: [
     { type: 'section', text: { type: 'mrkdwn', text } },
     { type: 'actions', elements: [
