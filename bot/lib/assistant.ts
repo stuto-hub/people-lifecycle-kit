@@ -432,15 +432,19 @@ const COUNTRIES = ['India', 'Brazil', 'Spain', 'Kenya', 'United States', 'USA', 
 export async function parseNewPerson(text: string, today: string) {
   const flow: 'Joiner' | 'Leaver' = /\b(leav|exit|resign|last day)/i.test(text) ? 'Leaver' : 'Joiner';
   const country = COUNTRIES.find(c => new RegExp('\\b' + c + '\\b', 'i').test(text)) || '';
-  const worker = /\b(full[- ]?time|employee|fte|permanent)\b/i.test(text) ? 'Employee' : /\b(contract(or)?|freelanc|part[- ]?time)\w*/i.test(text) ? 'Contractor' : '';
+  const worker = /\b(full[- ]?time|employee|fte|permanent)\b/i.test(text) ? 'Employee' : /\b(contr?act(or|er)?|freelanc|part[- ]?time)\w*/i.test(text) ? 'Contractor' : '';
   const day0 = parseDate(text, today);
   let name = (text.match(/\b(?:named|called|name is)\s+([A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)/) || [])[1] || '';
+  if (!name) {                                       // "new joiner XYZ, starting ..." / "new hire Priya Shah from ..."
+    const m = text.replace(/<@[^>]+>/g, '').match(/\bnew (?:joiner|hire|starter|leaver|employee|contractor)\s+([A-Za-z][\w'-]*(?:\s+[A-Z][\w'-]*)?)/i);
+    if (m && !/^(starting|starts|joining|in|from|on|is|who|that|for|with|named|called|at)$/i.test(m[1].split(/\s+/)[0])) name = m[1].split(/\s+/).filter(w => !/^(starting|starts|joining|in|from|on|is)$/i.test(w)).join(' ');
+  }
   if (!name) name = (text.replace(/<@[^>]+>/g, '').trim().match(/^([A-Za-z][\w'-]*(?:\s+[A-Z][\w'-]*)?)\s+(?:is\s+)?(?:joining|starting|starts|joins|leaving)\b/) || [])[1] || '';
   if (!name && env('ANTHROPIC_API_KEY')) {
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
         headers: { 'x-api-key': env('ANTHROPIC_API_KEY'), 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: CONFIG.CLAUDE_MODEL, max_tokens: 30, system: 'Return only the full name of the new person in the message, or NONE if no name is given. No other words.',
+        body: JSON.stringify({ model: CONFIG.CLAUDE_MODEL, max_tokens: 30, system: 'Return only the name of the new person in the message, exactly as written (even a placeholder like XYZ), or NONE if no name is given. No other words.',
           messages: [{ role: 'user', content: text.replace(/<@[^>]+>/g, '') }] }) });
       const j: any = await res.json();
       const t = ((j.content || [])[0]?.text || '').trim();
